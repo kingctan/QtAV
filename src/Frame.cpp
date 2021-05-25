@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -20,7 +20,8 @@
 ******************************************************************************/
 
 #include "QtAV/Frame.h"
-#include "private/Frame_p.h"
+#include "QtAV/private/Frame_p.h"
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -29,8 +30,8 @@ Frame::Frame(const Frame &other)
 {
 }
 
-Frame::Frame(FramePrivate &d):
-    d_ptr(&d)
+Frame::Frame(FramePrivate *d):
+    d_ptr(d)
 {
 }
 
@@ -42,11 +43,6 @@ Frame &Frame::operator =(const Frame &other)
 {
     d_ptr = other.d_ptr;
     return *this;
-}
-
-int Frame::allocate()
-{
-    return 0;
 }
 
 int Frame::bytesPerLine(int plane) const
@@ -61,6 +57,11 @@ int Frame::bytesPerLine(int plane) const
 QByteArray Frame::frameData() const
 {
     return d_func()->data;
+}
+
+int Frame::dataAlignment() const
+{
+    return d_func()->data_align;
 }
 
 QByteArray Frame::data(int plane) const
@@ -81,7 +82,7 @@ uchar* Frame::bits(int plane)
     return d_func()->planes[plane];
 }
 
-const uchar* Frame::bits(int plane) const
+const uchar* Frame::constBits(int plane) const
 {
     if (plane < 0 || plane >= planeCount()) {
         qWarning("Invalid plane! Valid range is [0, %d)", planeCount());
@@ -92,6 +93,10 @@ const uchar* Frame::bits(int plane) const
 
 void Frame::setBits(uchar *b, int plane)
 {
+    if (plane < 0 || plane >= planeCount()) {
+        qWarning("Invalid plane! Valid range is [0, %d)", planeCount());
+        return;
+    }
     Q_D(Frame);
     d->planes[plane] = b;
 }
@@ -99,7 +104,12 @@ void Frame::setBits(uchar *b, int plane)
 void Frame::setBits(const QVector<uchar *> &b)
 {
     Q_D(Frame);
+    const int nb_planes = planeCount();
     d->planes = b;
+    if (d->planes.size() > nb_planes) {
+        d->planes.reserve(nb_planes);
+        d->planes.resize(nb_planes);
+    }
 }
 
 void Frame::setBits(quint8 *slice[])
@@ -111,6 +121,10 @@ void Frame::setBits(quint8 *slice[])
 
 void Frame::setBytesPerLine(int lineSize, int plane)
 {
+    if (plane < 0 || plane >= planeCount()) {
+        qWarning("Invalid plane! Valid range is [0, %d)", planeCount());
+        return;
+    }
     Q_D(Frame);
     d->line_sizes[plane] = lineSize;
 }
@@ -118,7 +132,12 @@ void Frame::setBytesPerLine(int lineSize, int plane)
 void Frame::setBytesPerLine(const QVector<int> &lineSize)
 {
     Q_D(Frame);
+    const int nb_planes = planeCount();
     d->line_sizes = lineSize;
+    if (d->line_sizes.size() > nb_planes) {
+        d->line_sizes.reserve(nb_planes);
+        d->line_sizes.resize(nb_planes);
+    }
 }
 
 void Frame::setBytesPerLine(int stride[])
@@ -134,6 +153,10 @@ int Frame::planeCount() const
     return d->planes.size();
 }
 
+int Frame::channelCount() const
+{
+    return planeCount();
+}
 
 /*!
     Returns any extra metadata associated with this frame.
@@ -175,6 +198,16 @@ void Frame::setMetaData(const QString &key, const QVariant &value)
         d->metadata.insert(key, value);
     else
         d->metadata.remove(key);
+}
+
+qreal Frame::timestamp() const
+{
+    return d_func()->timestamp;
+}
+
+void Frame::setTimestamp(qreal ts)
+{
+    d_func()->timestamp = ts;
 }
 
 } //namespace QtAV

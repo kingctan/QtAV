@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2017 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -23,8 +23,8 @@
 #define QTAV_VERSION_H
 
 #define QTAV_MAJOR 1    //((QTAV_VERSION&0xff0000)>>16)
-#define QTAV_MINOR 3    //((QTAV_VERSION&0xff00)>>8)
-#define QTAV_PATCH 1    //(QTAV_VERSION&0xff)
+#define QTAV_MINOR 13    //((QTAV_VERSION&0xff00)>>8)
+#define QTAV_PATCH 0    //(QTAV_VERSION&0xff)
 
 
 #define QTAV_VERSION_MAJOR(V) ((V & 0xff0000) >> 16)
@@ -44,8 +44,6 @@
 
 /* the following are compile time version */
 /* C++11 requires a space between literal and identifier */
-static const char* const qtav_version_string = TOSTR(QTAV_MAJOR) "." TOSTR(QTAV_MINOR) "." TOSTR(QTAV_PATCH) "(" __DATE__ ", " __TIME__ ")";
 #define QTAV_VERSION_STR        TOSTR(QTAV_MAJOR) "." TOSTR(QTAV_MINOR) "." TOSTR(QTAV_PATCH)
-#define QTAV_VERSION_STR_LONG   QTAV_VERSION_STR "(" __DATE__ ", " __TIME__ ")"
 
 #endif // QTAV_VERSION_H

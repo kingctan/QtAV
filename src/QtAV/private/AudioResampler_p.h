@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -22,14 +22,14 @@
 #ifndef QTAV_AUDIORESAMPLER_P_H
 #define QTAV_AUDIORESAMPLER_P_H
 
-#include <QtAV/AudioFormat.h>
-#include <QtAV/QtAV_Compat.h>
+#include "QtAV/AudioFormat.h"
+#include "QtAV/private/AVCompat.h"
 #include <QtCore/QByteArray>
 
 namespace QtAV {
 
 class AudioResampler;
-class AudioResamplerPrivate : public DPtrPrivate<AudioResampler>
+class Q_AV_PRIVATE_EXPORT AudioResamplerPrivate : public DPtrPrivate<AudioResampler>
 {
 public:
     AudioResamplerPrivate():

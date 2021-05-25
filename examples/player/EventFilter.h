@@ -1,7 +1,7 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
-    
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
+
 *   This file is part of QtAV
 
     This program is free software: you can redistribute it and/or modify
@@ -28,8 +28,10 @@
 #include <QtCore/QObject>
 #include <QtCore/QPoint>
 
+QT_BEGIN_NAMESPACE
 class QMenu;
 class QPoint;
+QT_END_NAMESPACE
 namespace QtAV {
 class AVPlayer;
 }
@@ -40,6 +42,10 @@ class EventFilter : public QObject
 public:
     explicit EventFilter(QtAV::AVPlayer *player);
     virtual ~EventFilter();
+
+signals:
+    void helpRequested();
+    void showNextOSD();
 
 public slots:
     void openLocalFile();
@@ -54,6 +60,24 @@ protected:
 
 private:
     QMenu *menu;
+};
+
+
+class WindowEventFilter : public QObject
+{
+    Q_OBJECT
+public:
+    WindowEventFilter(QWidget *window);
+
+signals:
+    void fullscreenChanged();
+
+protected:
+    virtual bool eventFilter(QObject *watched, QEvent *event);
+
+private:
+    QWidget *mpWindow;
+    QPoint gMousePos, iMousePos;
 };
 
 #endif // QTAV_EVENTFILTER_H

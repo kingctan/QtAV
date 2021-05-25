@@ -1,7 +1,7 @@
 #ifndef SCREENSAVER_H
 #define SCREENSAVER_H
 
-#include "common.h"
+#include "common_export.h"
 #include <QtCore/QObject>
 
 // TODO: read QtSystemInfo.ScreenSaver
@@ -33,6 +33,7 @@ private:
     int allowExposures;
 #endif //Q_OS_LINUX
     int ssTimerId; //for mac
+    quint32 osxIOPMAssertionId; // for mac OSX >= 10.8
 };
 
 #endif // SCREENSAVER_H

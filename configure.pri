@@ -11,6 +11,7 @@
 QMAKE_CONFIG_LOG = $$dirname(_QMAKE_CACHE_QT4_)/config.log
 QMAKE_CONFIG_TESTS_DIR = $$_PRO_FILE_PWD_/config.tests
 
+lessThan(QT_MAJOR_VERSION, 5) {
 defineTest(cache) {
     !isEmpty(4): error("cache(var, [set|add|sub] [transient] [super], [srcvar]) requires one to three arguments.")
     !exists($$_QMAKE_CACHE_QT4_) {
@@ -41,7 +42,7 @@ defineTest(cache) {
     }
     #log("varstr: $$varstr")
 ##TODO: remove existing lines contain $$srcvar
-    #because write_file() will write 1 line for each value(seperated by space), so the value must be closed with "", then it's 1 value, not list
+    #because write_file() will write 1 line for each value(separated by space), so the value must be closed with "", then it's 1 value, not list
 #erase the existing var and value pair
     win32 {#:isEmpty(QMAKE_SH) { #windows sucks. can not access the cache
 
@@ -54,8 +55,11 @@ defineTest(cache) {
     }
     write_file($$_QMAKE_CACHE_QT4_, varstr, append)
 }
-
-equals(MAKEFILE_GENERATOR, UNIX) {
+} #Qt4
+QMAKE_MAKE = $$(MAKE)
+!isEmpty(QMAKE_MAKE) {
+    # We were called recursively. Use the right make, as MAKEFLAGS may be set as well.
+} equals(MAKEFILE_GENERATOR, UNIX) {
     QMAKE_MAKE = make
 } else:equals(MAKEFILE_GENERATOR, MINGW) {
     !equals(QMAKE_HOST.os, Windows): \
@@ -65,7 +69,8 @@ equals(MAKEFILE_GENERATOR, UNIX) {
 } else:if(equals(MAKEFILE_GENERATOR, MSVC.NET)|equals(MAKEFILE_GENERATOR, MSBUILD)) {
     QMAKE_MAKE = nmake
 } else {
-    error("Configure tests are not supported with the $$MAKEFILE_GENERATOR Makefile generator.")
+# error: the reset qmake will not work and displays nothing in qtc
+    warning("Configure tests are not supported with the $$MAKEFILE_GENERATOR Makefile generator.")
 }
 
 defineTest(qtRunLoggedCommand) {
@@ -95,20 +100,27 @@ defineTest(qtCompileTest) {
     log("Checking for $${1}... ")
     msg = "executing config test $$1"
     write_file($$QMAKE_CONFIG_LOG, msg, append)
-
     test_dir = $$QMAKE_CONFIG_TESTS_DIR/$$1
     test_out_dir = $$shadowed($$test_dir)
     #system always call win32 cmd in windows, so we need "cd /d" to ensure success cd to a different partition
-    win32:test_cmd_base = "cd /d $$system_quote($$system_path($$test_out_dir)) &&"
+    contains(QMAKE_HOST.os,Windows):test_cmd_base = "cd /d $$system_quote($$system_path($$test_out_dir)) &&"
     else: test_cmd_base = "cd $$system_quote($$system_path($$test_out_dir)) &&"
+
+# On WinRT we need to change the entry point as we cannot create windows applications
+  winrt {
+     qmake_configs += " \"QMAKE_LFLAGS+=/ENTRY:main\""
+  }
     # Disable qmake features which are typically counterproductive for tests
     qmake_configs = "\"CONFIG -= qt debug_and_release app_bundle lib_bundle\""
-
+    iphoneos: qmake_configs += "\"CONFIG+=iphoneos\""
+    iphonesimulator: qmake_configs += "\"CONFIG+=iphonesimulator\""
     # Clean up after previous run
     exists($$test_out_dir/Makefile):qtRunLoggedCommand("$$test_cmd_base $$QMAKE_MAKE distclean")
 
     mkpath($$test_out_dir)#|error("Aborting.") #mkpath currently return false, do not know why
-    qtRunLoggedCommand("$$test_cmd_base $$system_quote($$system_path($$QMAKE_QMAKE)) $$qmake_configs $$system_path($$test_dir)") {
+    SPEC =
+    !isEmpty(QMAKESPEC): SPEC = "-spec $$QMAKESPEC"
+    qtRunLoggedCommand("$$test_cmd_base $$system_quote($$system_path($$QMAKE_QMAKE)) $$SPEC $$qmake_configs $$system_path($$test_dir)") {
         qtRunLoggedCommand("$$test_cmd_base $$QMAKE_MAKE") {
             log("yes$$escape_expand(\\n)")
             msg = "test $$1 succeeded"

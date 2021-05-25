@@ -1,6 +1,6 @@
 /******************************************************************************
-    Simple Player:  this file is part of QtAV examples
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -17,169 +17,152 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
-#include <cstdio>
-#include <cstdlib>
-#include <QApplication>
 
+#include <QApplication>
 #include <QtDebug>
 #include <QtCore/QDir>
-#include <QtCore/QLocale>
-#include <QtCore/QTranslator>
 #include <QMessageBox>
 
 #include <QtAV/AVPlayer.h>
-#include <QtAV/VideoRendererTypes.h>
-#include <QtAV/OSDFilter.h>
-
+#include <QtAV/VideoOutput.h>
+#include <QtAVWidgets>
+#include "config/PropertyEditor.h"
 #include "MainWindow.h"
+#include "../common/common.h"
 
 using namespace QtAV;
+static const struct {
+    const char* name;
+    VideoRendererId id;
+} vid_map[] = {
+{ "opengl", VideoRendererId_OpenGLWidget },
+{ "gl", VideoRendererId_GLWidget2 },
+{ "d2d", VideoRendererId_Direct2D },
+{ "gdi", VideoRendererId_GDI },
+{ "xv", VideoRendererId_XV },
+{ "x11", VideoRendererId_X11 },
+{ "qt", VideoRendererId_Widget },
+{ 0, 0 }
+};
 
-static FILE *sLogfile = 0; //'log' is a function in msvc math.h
-
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-#define qInstallMessageHandler qInstallMsgHandler
-void Logger(QtMsgType type, const char *msg)
-{
-#else
-void Logger(QtMsgType type, const QMessageLogContext &, const QString& qmsg)
-{
-	const char* msg = qPrintable(qmsg);
+VideoRendererId rendererId_from_opt_name(const QString& name) {
+    for (int i = 0; vid_map[i].name; ++i) {
+        if (name == QLatin1String(vid_map[i].name))
+            return vid_map[i].id;
+    }
+#ifndef QT_NO_OPENGL
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    return VideoRendererId_OpenGLWidget; // qglwidget is not suitable for android
 #endif
-	 switch (type) {
-     case QtDebugMsg:
-		 fprintf(stdout, "Debug: %s\n", msg);
-         if (sLogfile)
-            fprintf(sLogfile, "Debug: %s\n", msg);
-         break;
-     case QtWarningMsg:
-		 fprintf(stdout, "Warning: %s\n", msg);
-         if (sLogfile)
-            fprintf(sLogfile, "Warning: %s\n", msg);
-		 break;
-     case QtCriticalMsg:
-		 fprintf(stderr, "Critical: %s\n", msg);
-         if (sLogfile)
-            fprintf(sLogfile, "Critical: %s\n", msg);
-		 break;
-     case QtFatalMsg:
-		 fprintf(stderr, "Fatal: %s\n", msg);
-         if (sLogfile)
-            fprintf(sLogfile, "Fatal: %s\n", msg);
-		 abort();
-     }
-     fflush(0);
+    return VideoRendererId_GLWidget2;
+#endif
+    return VideoRendererId_Widget;
 }
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    if (a.arguments().contains("-h") || a.arguments().contains("--help")) {
-        qDebug("Usage: %s [-vo qt/gl/d2d/gdi] [url/path]filename", a.applicationFilePath().section(QDir::separator(), -1).toUtf8().constData());
-        qDebug("\n%s", aboutQtAV_PlainText().toUtf8().constData());
-        return 0;
-    }
+    qDebug() << aboutQtAV_PlainText();
+    Config::setName(QString::fromLatin1("Player"));
+    QOptions options = get_common_options();
+    options.add(QString::fromLatin1("player options"))
+            ("ffmpeg-log",  QString(), QString::fromLatin1("ffmpeg log level. can be: quiet, panic, fatal, error, warn, info, verbose, debug. this can override env 'QTAV_FFMPEG_LOG'"))
+            ("vd-list", QString::fromLatin1("List video decoders and their properties"))
+            ("-vo",
+#ifndef QT_NO_OPENGL
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+             QString::fromLatin1("opengl")
+#else
+             QString::fromLatin1("gl")
+#endif
+#else
+             QString::fromLatin1("qt")
+#endif
+             , QString::fromLatin1("video renderer engine. can be gl, qt, d2d, gdi, xv, x11."))
+            ;
+    options.parse(argc, argv);
+    do_common_options_before_qapp(options);
 
-    QStringList qms;
-    qms << "QtAV" << "player" << "qt";
-    foreach(QString qm, qms) {
-        QTranslator *ts = new QTranslator(qApp);
-        QString path = qApp->applicationDirPath() + "/i18n/" + qm + "_" + QLocale::system().name();
-        qDebug() << "loading qm: " << path;
-        if (ts->load(path)) {
-            a.installTranslator(ts);
-        } else {
-            path = ":/i18n/" + qm + "_" + QLocale::system().name();
-            qDebug() << "loading qm: " << path;
-            if (ts->load(path))
-                a.installTranslator(ts);
-            else
-                delete ts;
+    if (options.value(QString::fromLatin1("vd-list")).toBool()) {
+        PropertyEditor pe;
+        VideoDecoderId *vid = NULL;
+        while ((vid = VideoDecoder::next(vid)) != NULL) {
+            VideoDecoder *vd = VideoDecoder::create(*vid);
+            pe.getProperties(vd);
+            qDebug("- %s:", vd->name().toUtf8().constData());
+            qDebug() << pe.buildOptions().toUtf8().constData();
         }
+        exit(0);
     }
-    QTranslator qtts;
-    if (qtts.load("qt_" + QLocale::system().name()))
-        a.installTranslator(&qtts);
+    QApplication a(argc, argv);
+    a.setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
+    qDebug() <<a.arguments();
+    a.setApplicationName(QString::fromLatin1("Player"));
+//    a.setApplicationDisplayName(QString::fromLatin1("QtAV Player"));
+    QDir::setCurrent(qApp->applicationDirPath());
 
-    sLogfile = fopen(QString(qApp->applicationDirPath() + "/log.txt").toUtf8().constData(), "w+");
-    if (!sLogfile) {
-        qWarning("Failed to open log file");
-        sLogfile = stdout;
-    }
-    qInstallMessageHandler(Logger);
+    do_common_options(options);
+    set_opengl_backend(options.option(QString::fromLatin1("gl")).value().toString(), a.arguments().first());
+    load_qm(QStringList() << QString::fromLatin1("player"), options.value(QString::fromLatin1("language")).toString());
+    QtAV::setFFmpegLogLevel(options.value(QString::fromLatin1("ffmpeg-log")).toByteArray());
 
-    QString vo;
-    int idx = a.arguments().indexOf("-vo");
-    if (idx > 0) {
-        vo = a.arguments().at(idx+1);
-    } else {
+    QOption op = options.option(QString::fromLatin1("vo"));
+    QString vo = op.value().toString();
+    if (!op.isSet()) {
         QString exe(a.arguments().at(0));
-        qDebug("exe: %s", exe.toUtf8().constData());
-        int i = exe.lastIndexOf('-');
+        int i = exe.lastIndexOf(QLatin1Char('-'));
         if (i > 0) {
-            vo = exe.mid(i+1, exe.indexOf('.') - i - 1);
+            vo = exe.mid(i+1, exe.indexOf(QLatin1Char('.')) - i - 1);
         }
     }
     qDebug("vo: %s", vo.toUtf8().constData());
-    bool opt_has_file = argc > idx + 2;
-    vo = vo.toLower();
-    if (vo != "gl" && vo != "d2d" && vo != "gdi" && vo != "xv" && vo != "qt")
-        vo = "gl";
-    QString title = "QtAV " /*+ vo + " "*/ + QtAV_Version_String_Long() + " wbsecg1@gmail.com";
-    VideoRenderer *renderer = 0;
-    if (vo == "gl") {
-        renderer = VideoRendererFactory::create(VideoRendererId_GLWidget);
-    } else if (vo == "d2d") {
-        renderer = VideoRendererFactory::create(VideoRendererId_Direct2D);
-    } else if (vo == "gdi") {
-        renderer = VideoRendererFactory::create(VideoRendererId_GDI);
-    } else if (vo == "xv") {
-        renderer = VideoRendererFactory::create(VideoRendererId_XV);
-    } else if (vo == "qt") {
-        renderer = VideoRendererFactory::create(VideoRendererId_Widget);
-    } else {
-#ifndef QT_NO_OPENGL
-        renderer = VideoRendererFactory::create(VideoRendererId_GLWidget);
-#else
-        renderer = VideoRendererFactory::create(VideoRendererId_Widget);
-#endif //QT_NO_OPENGL
-    }
-    if (!renderer) {
-        QMessageBox::critical(0, "QtAV", "vo '" + vo + "' not supported");
-        return 1;
-    }
-    renderer->widget()->setWindowTitle(title);
-    if (renderer->osdFilter())
-        renderer->osdFilter()->setShowType(OSD::ShowNone);
-    //renderer->scaleInRenderer(false);
-    renderer->setOutAspectRatioMode(VideoRenderer::VideoAspectRatio);
-
     MainWindow window;
+    window.setProperty("rendererId", rendererId_from_opt_name(vo.toLower()));
     window.show();
-    window.setWindowTitle(title);
-    window.setRenderer(renderer);
-    renderer->widget()->resize(renderer->widget()->width(), renderer->widget()->width()*9/16);
-    QString ao = "portaudio";
-    idx = a.arguments().indexOf("-ao");
-    if (idx > 0) {
-        ao = a.arguments().at(idx+1);
+    window.setWindowTitle(QString::fromLatin1("QtAV %1 wbsecg1@gmail.com").arg(QtAV_Version_String_Long()));
+    AppEventFilter ae(&window);
+    qApp->installEventFilter(&ae);
+
+    int x = window.x();
+    int y = window.y();
+    op = options.option(QString::fromLatin1("width"));
+    int w = op.value().toInt();
+    op = options.option(QString::fromLatin1("height"));
+    int h = op.value().toInt();
+    op = options.option(QString::fromLatin1("x"));
+    if (op.isSet())
+        x = op.value().toInt();
+    op = options.option(QString::fromLatin1("y"));
+    if (op.isSet())
+        y = op.value().toInt();
+    window.resize(w, h);
+    window.move(x, y);
+    if (options.value(QString::fromLatin1("fullscreen")).toBool())
+        window.showFullScreen();
+
+    op = options.option(QString::fromLatin1("ao"));
+    if (op.isSet()) {
+        QString aos(op.value().toString());
+        QStringList ao;
+        if (aos.contains(QString::fromLatin1(";")))
+            ao = aos.split(QString::fromLatin1(";"), QString::SkipEmptyParts);
+        else
+            ao = aos.split(QString::fromLatin1(","), QString::SkipEmptyParts);
+        window.setAudioBackends(ao);
     }
-    ao = ao.toLower();
-    qDebug("AO>>>>>>>>>>> %s", qPrintable(ao));
-    window.enableAudio(ao != "null" && ao != "0");
 
-    QStringList vd;
-    idx = a.arguments().indexOf("-vd");
-    if (idx > 0) {
-        vd = a.arguments().at(idx+1).split(";", QString::SkipEmptyParts);
+    op = options.option(QString::fromLatin1("vd"));
+    if (op.isSet()) {
+        QStringList vd = op.value().toString().split(QString::fromLatin1(";"), QString::SkipEmptyParts);
+        if (!vd.isEmpty())
+            window.setVideoDecoderNames(vd);
     }
-    if (!vd.isEmpty())
-        window.setVideoDecoderNames(vd);
-
-
-    opt_has_file &= argc > idx + 2;
-    if (opt_has_file) {
-        window.play(a.arguments().last());
+    op = options.option(QString::fromLatin1("file"));
+    if (op.isSet()) {
+        qDebug() << "-f set: " << op.value().toString();
+        window.play(op.value().toString());
+    } else {
+        if (argc > 1 && !a.arguments().last().startsWith(QLatin1Char('-')) && !a.arguments().at(argc-2).startsWith(QLatin1Char('-')))
+            window.play(a.arguments().last());
     }
     int ret = a.exec();
     return ret;

@@ -1,5 +1,5 @@
 # qmake common template pri file
-# Copyright (C) 2011-2013 Wang Bin <wbsecg1@gmail.com>
+# Copyright (C) 2011-2016 Wang Bin <wbsecg1@gmail.com>
 # Shanghai, China.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -19,13 +19,15 @@
 
 isEmpty(COMMON_PRI_INCLUDED): { #begin COMMON_PRI_INCLUDED
 
-CONFIG += profile
-#profiling, -pg is not supported for msvc
-debug:!*msvc*:profile {
-	QMAKE_CXXFLAGS_DEBUG += -pg
-	QMAKE_LFLAGS_DEBUG += -pg
-	QMAKE_CXXFLAGS_DEBUG = $$unique(QMAKE_CXXFLAGS_DEBUG)
-	QMAKE_LFLAGS_DEBUG = $$unique(QMAKE_LFLAGS_DEBUG)
+mac:contains(QT_CONFIG, qt_framework):!mac_dylib: CONFIG += mac_framework
+
+isEmpty(QMAKE_EXTENSION_SHLIB) {
+  unix {
+    mac|ios: QMAKE_EXTENSION_SHLIB = dylib
+    else: QMAKE_EXTENSION_SHLIB = so #why android is empty?
+  } else:win* {
+    QMAKE_EXTENSION_SHLIB = dll
+  }
 }
 
 #$$[TARGET_PLATFORM]
@@ -35,19 +37,31 @@ _ARCH =
 _EXTRA =
 
 unix {
-	_OS = _unix
-	macx: _OS = _mac
-	else:*linux*: _OS = _linux
-	*maemo* {
-		_OS = _maemo
-		*maemo5*:_OS = _maemo5
-		*maemo6*:_OS = _maemo6
-	} else:*meego*: _OS = _meego
-	!isEmpty(MEEGO_EDITION): _OS = _$$MEEGO_EDITION
+    _OS = _unix
+    android {
+        _OS = _android
+    } else:ios {
+        _OS = _ios
+    } else:macx {
+        _OS = _osx
+    } else:*maemo* {
+        _OS = _maemo
+        *maemo5*:_OS = _maemo5
+        *maemo6*:_OS = _maemo6
+    } else:*meego* {
+        _OS = _meego
+        !isEmpty(MEEGO_EDITION): _OS = _$$MEEGO_EDITION
+    } else:*linux* {
+        _OS = _linux
+    }
+# QMAKE_RPATHDIR will be ignored if QMAKE_LFLAGS_RPATH is not defined. e.g. qt4.8 unsupported/macx-clang-libc++
+  isEmpty(QMAKE_LFLAGS_RPATH): QMAKE_LFLAGS_RPATH=-Wl,-rpath,
 } else:wince* {
-	_OS = _wince
+    _OS = _wince
+} else:winrt {
+    _OS = _winrt
 } else:win32 { #true for wince
-        _OS = _win
+    _OS = _win
 }
 #*arm*: _ARCH = $${_ARCH}_arm
 contains(QT_ARCH, arm.*) {
@@ -63,9 +77,22 @@ win32-msvc* {
 }
 
 #################################functions#########################################
+defineTest(qtAtLeast) { #e.g. qtAtLeast(4), qtAtLeast(5, 2), qtAtLeast(5, 4, 2)
+  lessThan(QT_MAJOR_VERSION, $$1):return(false)
+  isEmpty(2):return(true)
+  greaterThan(QT_MAJOR_VERSION, $$1):return(true)
+
+  lessThan(QT_MINOR_VERSION, $$2):return(false)
+  isEmpty(3):return(true)
+  greaterThan(QT_MINOR_VERSION, $$2):return(true)
+
+  lessThan(QT_PATCH_VERSION, $$3):return(false)
+  return(true)
+}
+
 defineTest(qtRunQuitly) {
     #win32 always call windows command
-    win32 { #QMAKE_HOST.os?
+    contains(QMAKE_HOST.os,Windows) {
       system("$$1 2>&1 >nul")|return(false)  #system always call win32 cmd
     } else {
       system("$$1 2>&1 >/dev/null")|return(false)
@@ -73,21 +100,45 @@ defineTest(qtRunQuitly) {
     return(true)
 }
 
+defineReplace(platformTargetSuffix) {
+    ios:CONFIG(iphonesimulator, iphonesimulator|iphoneos): \
+        suffix = _iphonesimulator
+    else: \
+        suffix =
+
+    CONFIG(debug, debug|release) {
+        !debug_and_release|build_pass {
+            mac: return($${suffix}_debug)
+            win32: {
+                win32-g++: return($${suffix})
+                !win32-g++: return($${suffix}d)
+            }
+        }
+    }
+    return($$suffix)
+}
+
 #Acts like qtLibraryTarget. From qtcreator.pri
 defineReplace(qtLibName) {
 	#TEMPLATE += fakelib
 	#LIB_FULLNAME = $$qtLibraryTarget($$1)
 	#TEMPLATE -= fakelib
-	unset(LIBRARY_NAME)
-	LIBRARY_NAME = $$1
-	CONFIG(debug, debug|release) {
-		!debug_and_release|build_pass {
-			mac:RET = $$member(LIBRARY_NAME, 0)_debug
-			else:win32:RET = $$member(LIBRARY_NAME, 0)d
-		}
-	}
-	isEmpty(RET):RET = $$LIBRARY_NAME
-	!win32: return($$RET)
+        unset(RET)
+        RET = $$1
+#qt5.4.2 add qt5LibraryTarget to fix qtLibraryTarget break
+    qtAtLeast(5, 4) {
+        mac:CONFIG(shared, static|shared):contains(QT_CONFIG, qt_framework) {
+          QMAKE_FRAMEWORK_BUNDLE_NAME = $$RET
+          export(QMAKE_FRAMEWORK_BUNDLE_NAME)
+       } else {
+           # insert the major version of Qt in the library name
+           # unless it's a framework build
+           isEqual(QT_MAJOR_VERSION, 5):isEqual(QT_MINOR_VERSION,4):lessThan(QT_PATCH_VERSION, 2):RET ~= s,^Qt,Qt$$QT_MAJOR_VERSION,
+       }
+    }
+        RET = $$RET$$platformTargetSuffix()
+        qtAtLeast(5, 14):android:RET = $${RET}_$$ANDROID_TARGET_ARCH
+        !win32: return($$RET)
 
 	isEmpty(2): VERSION_EXT = $$VERSION
 	else: VERSION_EXT = $$2
@@ -97,34 +148,32 @@ defineReplace(qtLibName) {
 	}
 	RET = $${RET}$${VERSION_EXT}
 	unset(VERSION_EXT)
-	return($$RET)
+        return($$RET)
 }
 
 
 #fakelib
 defineReplace(qtStaticLib) {
+# static lib does not have major version flag at the end
 	unset(LIB_FULLNAME)
-	LIB_FULLNAME = $$qtLibName($$1, $$2)
-	*msvc*|win32-icc: LIB_FULLNAME = $$member(LIB_FULLNAME, 0).lib
-	else: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).a
+        TEMPLATE += fakelib
+        LIB_FULLNAME = $$qtLibraryTarget($$1)
+        TEMPLATE -= fakelib
+        LIB_FULLNAME = $${QMAKE_PREFIX_STATICLIB}$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_STATICLIB}
 	return($$LIB_FULLNAME)
 }
 
 defineReplace(qtSharedLib) {
 	unset(LIB_FULLNAME)
 	LIB_FULLNAME = $$qtLibName($$1, $$2)
-	win32: LIB_FULLNAME = $$member(LIB_FULLNAME, 0).dll
-	else {
-		macx|ios: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_SHLIB} #default_post.prf
-		else: LIB_FULLNAME = lib$$member(LIB_FULLNAME, 0).so
-	}
+        LIB_FULLNAME = $${QMAKE_PREFIX_SHLIB}$$member(LIB_FULLNAME, 0).$${QMAKE_EXTENSION_SHLIB} #default_post.prf
 	return($$LIB_FULLNAME)
 }
 
 defineReplace(qtLongName) {
-	unset(LONG_NAME)
-		LONG_NAME = $$1$${_OS}_$${TARGET_ARCH}$${_EXTRA}
-	return($$LONG_NAME)
+  unset(LONG_NAME)
+  LONG_NAME = $$1$${_OS}_$$join(TARGET_ARCH,+)$${_EXTRA}
+  return($$LONG_NAME)
 }
 
 defineTest(empty_file) {
@@ -139,9 +188,111 @@ defineTest(empty_file) {
     }
 }
 
-##TODO: add defineReplace(getValue): parameter is varname
-lessThan(QT_MAJOR_VERSION, 5): {
+config_simd {
+#TODO: QMAKE_CFLAGS_XXX, QT_CPU_FEATURES
+*g++*|*qcc*: QMAKE_CFLAGS_NEON = -mfpu=neon
+win32-icc {
+  QMAKE_CFLAGS_SSE2 = -arch:SSE2
+  QMAKE_CFLAGS_SSE4_1 = -arch:SSE4.1
+} else:*-icc { #mac, linux
+  QMAKE_CFLAGS_SSE2 = -xSSE2
+  QMAKE_CFLAGS_SSE4_1 = -xSSE4.1
+} else:*msvc* {
+# all x64 processors supports sse2. unknown option for vc
+  #!isEqual(QT_ARCH, x86_64)|!x86_64 {
+    QMAKE_CFLAGS_SSE2 = -arch:SSE2
+    QMAKE_CFLAGS_SSE4_1 = -arch:SSE2
+  #}
+} else {
+  QMAKE_CFLAGS_SSE2 = -msse2
+  QMAKE_CFLAGS_SSE4_1 = -msse4.1
+}
 
+#mac: simd will load qt_build_config and the result is soname will prefixed with QT_INSTALL_LIBS and link flag will append soname after QMAKE_LFLAGS_SONAME
+defineTest(addSimdCompiler) { #from qt5 simd.prf
+    name = $$1
+    upname = $$upper($$name)
+    headers_var = $${upname}_HEADERS
+    sources_var = $${upname}_SOURCES
+    asm_var = $${upname}_ASM
+# config_$$1 is defined by config.tests (tests/arch)
+    CONFIG($$1)|CONFIG(config_$$1) {
+        cflags = $$eval(QMAKE_CFLAGS_$${upname})
+        contains(QT_CPU_FEATURES, $$name) {
+            # Default compiler settings include this feature, so just add to SOURCES
+            SOURCES += $$eval($$sources_var)
+            export(SOURCES)
+        } else {
+#qt4 always need eval() if var is not const
+            # We need special compiler flags
+            eval($${name}_compiler.commands = $$QMAKE_CXX -c $(CXXFLAGS) $$cflags $(INCPATH) ${QMAKE_FILE_IN})
+            msvc: eval($${name}_compiler.commands += -Fo${QMAKE_FILE_OUT})
+            else: eval($${name}_compiler.commands += -o ${QMAKE_FILE_OUT})
+
+            eval($${name}_compiler.dependency_type = TYPE_C)
+            eval($${name}_compiler.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_BASE}$${first(QMAKE_EXT_OBJ)})
+            eval($${name}_compiler.input = $$sources_var)
+            eval($${name}_compiler.variable_out = OBJECTS)
+            eval($${name}_compiler.name = compiling[$${name}] ${QMAKE_FILE_IN})
+            silent: eval($${name}_compiler.commands = @echo compiling[$${name}] ${QMAKE_FILE_IN} && $$eval($${name}_compiler.commands))
+            QMAKE_EXTRA_COMPILERS += $${name}_compiler
+
+            export($${name}_compiler.commands)
+            export($${name}_compiler.dependency_type)
+            export($${name}_compiler.output)
+            export($${name}_compiler.input)
+            export($${name}_compiler.variable_out)
+            export($${name}_compiler.name)
+        }
+
+        # We always need an assembler (need to run the C compiler and without precompiled headers)
+        msvc {
+            # Don't know how to run MSVC's assembler...
+            !isEmpty($$asm_var): error("Sorry, not implemented: assembling $$upname for MSVC.")
+        } else: false {
+            # This is just for the IDE
+            SOURCES += $$eval($$asm_var)
+            export(SOURCES)
+        } else {
+            eval($${name}_assembler.commands = $$QMAKE_CC -c $(CFLAGS))
+            !contains(QT_CPU_FEATURES, $${name}): eval($${name}_assembler.commands += $$cflags)
+            clang:no_clang_integrated_as: eval($${name}_assembler.commands += -fno-integrated-as)
+            eval($${name}_assembler.commands += $(INCPATH) ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT})
+            eval($${name}_assembler.dependency_type = TYPE_C)
+            eval($${name}_assembler.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_BASE}$${first(QMAKE_EXT_OBJ)})
+            eval($${name}_assembler.input = $$asm_var)
+            eval($${name}_assembler.variable_out = OBJECTS)
+            eval($${name}_assembler.name = assembling[$${name}] ${QMAKE_FILE_IN})
+            silent: eval($${name}_assembler.commands = @echo assembling[$${name}] ${QMAKE_FILE_IN} && $$eval($${name}_assembler.commands))
+            QMAKE_EXTRA_COMPILERS += $${name}_assembler
+
+            export($${name}_assembler.commands)
+            export($${name}_assembler.dependency_type)
+            export($${name}_assembler.output)
+            export($${name}_assembler.input)
+            export($${name}_assembler.variable_out)
+            export($${name}_assembler.name)
+        }
+
+        HEADERS += $$eval($$headers_var)
+        export(HEADERS)
+        export(QMAKE_EXTRA_COMPILERS)
+    }
+}
+addSimdCompiler(sse2)
+addSimdCompiler(sse3)
+addSimdCompiler(ssse3)
+addSimdCompiler(sse4_1)
+addSimdCompiler(sse4_2)
+addSimdCompiler(avx)
+addSimdCompiler(avx2)
+addSimdCompiler(neon)
+addSimdCompiler(mips_dsp)
+addSimdCompiler(mips_dspr2)
+} #config_simd
+
+##TODO: add defineReplace(getValue): parameter is varname
+lessThan(QT_MAJOR_VERSION, 5) {
 defineTest(log){
     system(echo $$system_quote($$1))
 }
@@ -208,7 +359,7 @@ defineReplace(shell_quote_win) {
 # - control chars & space
 # - the windows shell meta chars "&()<>^|
 # - the potential separators ,;=
-#TODO: how to deal with  "^", "|"? every char are seperated by "|"?
+#TODO: how to deal with  "^", "|"? every char are separated by "|"?
 #how to avoid replacing "^" again for the second time
     isEmpty(1):error("shell_quote(arg) requires one argument.")
     special_chars = & \( \) < >
@@ -234,19 +385,19 @@ defineReplace(shell_quote_unix) {
 }
 ##TODO: see qmake/library/ioutils.cpp
 defineReplace(shell_quote) {
-    win32:isEmpty(QMAKE_SH):return($$shell_quote_win($$1))
+    contains(QMAKE_HOST.os,Windows):isEmpty(QMAKE_SH):return($$shell_quote_win($$1))
     return($$shell_quote_unix($$1))
 }
 
 ##TODO: see qmake/library/ioutils.cpp
 defineReplace(system_quote) {
     isEmpty(1):error("system_quote(arg) requires one argument.")
-    unix:return($$shell_quote_unix($$1))
-    return($$shell_quote_win($$1))
+    contains(QMAKE_HOST.os,Windows): return($$shell_quote_win($$1))
+    return($$shell_quote_unix($$1))
 }
 
 defineReplace(system_path) {
-    win32 {
+    contains(QMAKE_HOST.os,Windows) {
         1 ~= s,/,\\,g #qmake \\=>put \\=>real \?
     } else {
         1 ~= s,\\\\,/,g  ##why is \\\\. real \=>we read \\=>qmake \\\\?
@@ -254,6 +405,38 @@ defineReplace(system_path) {
     return($$1)
 }
 } #lessThan(QT_MAJOR_VERSION, 5)
+
+# set default rpath and add user defined rpaths
+defineTest(set_rpath) {
+  !unix: return(true)
+  RPATHDIR = $$ARGS #see doc
+  LIBS += -L/usr/local/lib
+# $$[QT_INSTALL_LIBS] and $$DESTDIR and pro dir will be auto added to QMAKE_RPATHDIR if QMAKE_RPATHDIR is not empty
+# Current (sub)project dir is auto added to the first value as prefix. e.g. QMAKE_RPATHDIR = .. ==> -Wl,-rpath,ROOT/..
+# Executable dir search: ld -z origin, g++ -Wl,-R,'$ORIGIN', in makefile -Wl,-R,'$$ORIGIN'
+# Working dir search: "."
+# mac: install_name @rpath will search paths set in rpath link flags
+# QMAKE_RPATHDIR: lflags maybe wrong, paths are modified
+  #!cross_compile: RPATHDIR *= $$PROJECT_LIBDIR
+  macx|ios {
+    RPATHDIR *= @loader_path/../Frameworks @executable_path/../Frameworks
+    QMAKE_LFLAGS_SONAME = -Wl,-install_name,@rpath/
+  } else {
+    RPATHDIR *= \$\$ORIGIN \$\$ORIGIN/lib . /usr/local/lib $$[QT_INSTALL_LIBS]
+# $$PROJECT_LIBDIR only for host == target. But QMAKE_TARGET.arch is only available on windows. QT_ARCH is bad, e.g. QT_ARCH=i386 while QMAKE_HOST.arch=i686
+# https://bugreports.qt-project.org/browse/QTBUG-30263
+    QMAKE_LFLAGS *= -Wl,-z,origin #\'-Wl,-rpath,$$join(RPATHDIR, ":")\'
+  }
+  for(R,RPATHDIR) {
+    QMAKE_LFLAGS *= \'$${QMAKE_LFLAGS_RPATH}$$R\'
+  }
+#  QMAKE_RPATHDIR *= $$RPATHDIR
+#export(QMAKE_RPATHDIR)
+  export(QMAKE_LFLAGS_SONAME)
+  export(QMAKE_LFLAGS)
+  return(true)
+}
+
 #argument 1 is default dir if not defined
 defineTest(getBuildRoot) {
     !isEmpty(2): unset(BUILD_DIR)
@@ -296,12 +479,12 @@ defineTest(preparePaths) {
 #	TARGET = $$qtLongName($$TARGET)
         EXE_EXT =
         win32: EXE_EXT = .exe
-        CONFIG(release, debug|release): !isEmpty(QMAKE_STRIP): QMAKE_POST_LINK = -$$QMAKE_STRIP $$DESTDIR/$${TARGET}$${EXE_EXT} #.exe in win
+        CONFIG(release, debug|release): !isEmpty(QMAKE_STRIP):!mac_framework: QMAKE_POST_LINK = -$$QMAKE_STRIP $$DESTDIR/$${TARGET}$${EXE_EXT} #.exe in win
     } else: DESTDIR = $$qtLongName($$BUILD_DIR/lib)
     !build_pass {
         message(target: $$DESTDIR/$$TARGET)
         !isEmpty(PROJECTROOT) {
-            TRANSLATIONS *= $$PROJECTROOT/i18n/$${TARGET}_zh-cn.ts $$PROJECTROOT/i18n/$${TARGET}_zh_CN.ts
+            TRANSLATIONS *= i18n/$${TARGET}_zh_CN.ts
             export(TRANSLATIONS)
         }
     }

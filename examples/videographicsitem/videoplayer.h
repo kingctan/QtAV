@@ -1,6 +1,6 @@
 /******************************************************************************
     this file is part of QtAV examples
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,9 +22,12 @@
 #define QTAV_VIDEOPLAYER_H
 
 #include <QtAV/AVPlayer.h>
-#include <QtAV/GraphicsItemRenderer.h>
+#include <QtAVWidgets/GraphicsItemRenderer.h>
 #include <QWidget>
 
+QT_BEGIN_NAMESPACE
+class QGraphicsView;
+QT_END_NAMESPACE
 class VideoPlayer : public QWidget
 {
     Q_OBJECT
@@ -34,13 +37,21 @@ public:
     ~VideoPlayer();
 
     QSize sizeHint() const { return QSize(720, 640); }
+    void play(const QString& file);
+
+public slots:
+    void setOpenGL(bool o = true);
 
 private slots:
+    void setOrientation(int value);
     void rotateVideo(int angle);
+    void scaleVideo(int value);
+    void open();
 
 private:
     QtAV::AVPlayer mediaPlayer;
     QtAV::GraphicsItemRenderer *videoItem;
+    QGraphicsView *view;
 };
 
 #endif //QTAV_VIDEOPLAYER_H

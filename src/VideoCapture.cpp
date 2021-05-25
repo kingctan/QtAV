@@ -1,6 +1,6 @@
 /******************************************************************************
     VideoCapture.cpp: description
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
     
 *   This file is part of QtAV
 
@@ -18,69 +18,111 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
-
-
-#include <QtAV/VideoCapture.h>
-#include <QtCore/QThread>
+#include "QtAV/VideoCapture.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QRunnable>
 #include <QtCore/QThreadPool>
-#include <QtGui/QImage>
-
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
 #include <QtGui/QDesktopServices>
 #else
 #include <QtCore/QStandardPaths>
 #endif
+#include "utils/Logger.h"
+
 namespace QtAV {
 
+Q_GLOBAL_STATIC(QThreadPool, videoCaptureThreadPool)
+static bool app_is_dieing = false;
+// TODO: cancel if qapp is quit
 class CaptureTask : public QRunnable
 {
 public:
-    CaptureTask(VideoCapture* c):cap(c){
-        format = "PNG";
-        qfmt = QImage::Format_RGB32;
+    CaptureTask(VideoCapture* c)
+        : cap(c)
+        , save(true)
+        , original_fmt(false)
+        , quality(-1)
+        , format(QStringLiteral("PNG"))
+        , qfmt(QImage::Format_ARGB32)
+    {
         setAutoDelete(true);
     }
     virtual void run() {
+        if (app_is_dieing) {
+            qDebug("app is dieing. cancel capture task %p", this);
+            return;
+        }
+        QImage image(frame.toImage());
+        if (image.isNull()) {
+            qWarning("Failed to convert to QImage");
+            return;
+        }
+        QMetaObject::invokeMethod(cap, "imageCaptured", Q_ARG(QImage, image));
+        if (!save)
+            return;
         bool main_thread = QThread::currentThread() == qApp->thread();
         qDebug("capture task running in thread %p [main thread=%d]", QThread::currentThreadId(), main_thread);
         if (!QDir(dir).exists()) {
             if (!QDir().mkpath(dir)) {
-                cap->error = VideoCapture::DirCreateError;
                 qWarning("Failed to create capture dir [%s]", qPrintable(dir));
                 QMetaObject::invokeMethod(cap, "failed");
                 return;
             }
         }
-        QImage image((const uchar*)data.constData(), width, height, qfmt);
-        QString path(dir + "/" + name + "." + format.toLower());
+        name += QString::number(frame.timestamp(), 'f', 3);
+        QString path(dir + QStringLiteral("/") + name + QStringLiteral("."));
+        if (original_fmt) {
+            if (!frame.constBits(0)) {
+                frame = frame.to(frame.format());
+            }
+            path.append(frame.format().name());
+            qDebug("Saving capture to %s", qPrintable(path));
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly)) {
+                qWarning("VideoCapture is failed to open file %s", qPrintable(path));
+                QMetaObject::invokeMethod(cap, "failed");
+                return;
+            }
+            int sz = 0;
+            const char* data = (const char*)frame.frameDataPtr(&sz);
+            if (file.write(data, sz) <= 0) {
+                qWarning("VideoCapture is failed to write captured frame with original format");
+                QMetaObject::invokeMethod(cap, "failed");
+                file.close();
+                return;
+            }
+            file.close();
+            QMetaObject::invokeMethod(cap, "saved", Q_ARG(QString, path));
+            return;
+        }
+        if (image.isNull())
+            return;
+        path.append(format.toLower());
         qDebug("Saving capture to %s", qPrintable(path));
         bool ok = image.save(path, format.toLatin1().constData(), quality);
         if (!ok) {
-            cap->error = VideoCapture::SaveError;
             qWarning("Failed to save capture");
             QMetaObject::invokeMethod(cap, "failed");
         }
-        QMetaObject::invokeMethod(cap, "finished");
+        QMetaObject::invokeMethod(cap, "saved", Q_ARG(QString, path));
     }
 
     VideoCapture *cap;
-    int width, height, quality;
+    bool save;
+    bool original_fmt;
+    int quality;
     QString format, dir, name;
     QImage::Format qfmt;
-    QByteArray data;
+    VideoFrame frame;
 };
 
 VideoCapture::VideoCapture(QObject *parent) :
     QObject(parent)
   , async(true)
-  , is_requested(false)
   , auto_save(true)
-  , error(NoError)
-  , qfmt(QImage::Format_RGB32)
-  , pts(0)
+  , original_fmt(false)
+  , qfmt(QImage::Format_ARGB32)
 {
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
     dir = QDesktopServices::storageLocation(QDesktopServices::PicturesLocation);
@@ -88,19 +130,19 @@ VideoCapture::VideoCapture(QObject *parent) :
     dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
 #endif
     if (dir.isEmpty())
-        dir = qApp->applicationDirPath() + "/capture";
-    fmt = "PNG";
+        dir = qApp->applicationDirPath() + QStringLiteral("/capture");
+    fmt = QStringLiteral("PNG");
     qual = -1;
+    // seems no direct connection is fine too
+    connect(qApp, SIGNAL(aboutToQuit()), SLOT(handleAppQuit()), Qt::DirectConnection);
 }
 
-VideoCapture::~VideoCapture()
+void VideoCapture::setAsync(bool value)
 {
-    qDebug("%p %s %s", QThread::currentThreadId(), __FILE__, __FUNCTION__);
-}
-
-void VideoCapture::setAsync(bool async)
-{
-    this->async = async;
+    if (async == value)
+        return;
+    async = value;
+    Q_EMIT asyncChanged();
 }
 
 bool VideoCapture::isAsync() const
@@ -108,9 +150,12 @@ bool VideoCapture::isAsync() const
     return async;
 }
 
-void VideoCapture::setAutoSave(bool a)
+void VideoCapture::setAutoSave(bool value)
 {
-    auto_save = a;
+    if (auto_save == value)
+        return;
+    auto_save = value;
+    Q_EMIT autoSaveChanged();
 }
 
 bool VideoCapture::autoSave() const
@@ -118,71 +163,78 @@ bool VideoCapture::autoSave() const
     return auto_save;
 }
 
-void VideoCapture::request()
+void VideoCapture::setOriginalFormat(bool value)
 {
-    is_requested = true;
+    if (original_fmt == value)
+        return;
+    original_fmt = value;
+    Q_EMIT originalFormatChanged();
 }
 
-void VideoCapture::cancel()
+bool VideoCapture::isOriginalFormat() const
 {
-    is_requested = false;
+    return original_fmt;
 }
 
-bool VideoCapture::isRequested() const
+void VideoCapture::handleAppQuit()
 {
-    return is_requested;
+    app_is_dieing = true;
+    // TODO: how to cancel? since qt5.2, we can use clear()
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+    videoCaptureThreadPool()->clear();
+#endif
+    videoCaptureThreadPool()->setExpiryTimeout(0);
+    videoCaptureThreadPool()->waitForDone();
+}
+
+void  VideoCapture::capture()
+{
+    Q_EMIT requested();
 }
 
 void VideoCapture::start()
 {
-    //QReadLocker locker(&lock);
-    //Q_UNUSED(locker);
-    is_requested = false;
-    error = NoError;
-    emit ready();
-    if (!auto_save) {
-        emit finished();
-        return;
+    Q_EMIT frameAvailable(frame);
+    if (!frame.isValid() || !frame.constBits(0)) { // if frame is always cloned, then size is at least width*height
+        qDebug("Captured frame from hardware decoder surface.");
     }
     CaptureTask *task = new CaptureTask(this);
-    task->width = width;
-    task->height = height;
+    // copy properties so the task will not be affect even if VideoCapture properties changed
+    task->save = autoSave();
+    task->original_fmt = original_fmt;
     task->quality = qual;
     task->dir = dir;
     task->name = name;
     task->format = fmt;
     task->qfmt = qfmt;
-    task->data = data;
+    task->frame = frame; //copy here and it's safe in capture thread because start() is called immediatly after setVideoFrame
     if (isAsync()) {
-        QThreadPool::globalInstance()->start(task);
+        videoCaptureThreadPool()->start(task);
     } else {
         task->run();
+        delete task;
     }
 }
 
-qreal VideoCapture::position() const
+void VideoCapture::setSaveFormat(const QString &format)
 {
-    return pts;
-}
-
-void VideoCapture::setPosition(qreal pts)
-{
-    this->pts = pts;
-}
-
-void VideoCapture::setFormat(const QString &format)
-{
+    if (format.toLower() == fmt.toLower())
+        return;
     fmt = format;
+    Q_EMIT saveFormatChanged();
 }
 
-QString VideoCapture::format() const
+QString VideoCapture::saveFormat() const
 {
     return fmt;
 }
 
-void VideoCapture::setQuality(int quality)
+void VideoCapture::setQuality(int value)
 {
-    qual = quality;
+    if (qual == value)
+        return;
+    qual = value;
+    Q_EMIT qualityChanged();
 }
 
 int VideoCapture::quality() const
@@ -190,9 +242,12 @@ int VideoCapture::quality() const
     return qual;
 }
 
-void VideoCapture::setCaptureName(const QString &name)
+void VideoCapture::setCaptureName(const QString &value)
 {
-    this->name = name;
+    if (name == value)
+        return;
+    name = value;
+    Q_EMIT captureNameChanged();
 }
 
 QString VideoCapture::captureName() const
@@ -200,9 +255,12 @@ QString VideoCapture::captureName() const
     return name;
 }
 
-void VideoCapture::setCaptureDir(const QString &dir)
+void VideoCapture::setCaptureDir(const QString &value)
 {
-    this->dir = dir;
+    if (dir == value)
+        return;
+    dir = value;
+    Q_EMIT captureDirChanged();
 }
 
 QString VideoCapture::captureDir() const
@@ -210,30 +268,18 @@ QString VideoCapture::captureDir() const
     return dir;
 }
 
-void VideoCapture::setRawImage(const QByteArray &raw, const QSize &size, QImage::Format fmt)
+/*
+ * If the frame is not created for direct rendering, then the frame data is already deep copied, so detach is enough.
+ * TODO: map frame from texture etc.
+ */
+void VideoCapture::setVideoFrame(const VideoFrame &frame)
 {
-    setRawImage(raw, size.width(), size.height(), fmt);
-}
-
-void VideoCapture::setRawImage(const QByteArray &raw, int w, int h, QImage::Format fmt)
-{
-    QWriteLocker locker(&lock);
-    Q_UNUSED(locker);
-    width = w;
-    height = h;
-    qfmt = fmt;
-    data = raw;
-}
-
-void VideoCapture::getRawImage(QByteArray *raw, int *w, int *h, QImage::Format *fmt)
-{
-    QReadLocker locker(&lock);
-    Q_UNUSED(locker);
-    *raw = data;
-    *w = width;
-    *h = height;
-    if (fmt)
-        *fmt = qfmt;
+    // parameter in ready(QtAV::VideoFrame) ensure we can access the frame without lock
+    /*
+     * clone here may block VideoThread. But if not clone here, the frame may be
+     * modified outside and is not safe.
+     */
+    this->frame = frame.clone(); // TODO: no clone, use detach()
 }
 
 } //namespace QtAV

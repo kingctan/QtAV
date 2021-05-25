@@ -1,15 +1,29 @@
 CVS
 .#*
 
-.hg
-.hgignore
+*.patch
+*.diff
+*.orig
+#*.rej
+contrib/include
+*~
+*.mak
 
-bin
+# Hidden files are ignored by default with exceptions
+.*
+!/.gitignore
+!/.github
+!/.gitmodules
+!/.qmake.conf
+!/.travis.yml
+
+# .install files in debian/ are generated and ignored
+debian/*.install
+
 obj
 TestResults
 *.pbxuser
 *.perspectivev3
-.DS_Store
 
 *.old
 *.log
@@ -48,15 +62,21 @@ Makefile*
 *.ilk
 
 #dirs
-.moc
-.rcc
-.obj
 /bin*
 /lib*
+build
 Debug
 Release
 *.Debug
 *.Release
+
+# Ignore temporary Python files
+python/PyQtAV.api
+python/PyQtAV.pro
+python/QtAV.pyi
+python/QtAVWidgets.pyi
+python/QtAV
+python/QtAVWidgets
 
 *.fuse*
 
@@ -66,3 +86,5 @@ Release
 *.moc
 *qrc_res.cpp
 
+#cache
+*.swp

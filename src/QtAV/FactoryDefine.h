@@ -1,6 +1,6 @@
 /******************************************************************************
     Some macros to create a factory and register functions
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -32,7 +32,7 @@
  *      #include "FactoryDefine.h"
  *      FACTORY_DECLARE(MyClass)
  * 2. In MyClass.cpp:
- *      #include "factory.h"
+ *      #include "QtAV/private/factory.h"
  *      FACTORY_DEFINE(MyClass)
  *
  * To create and register a new subclass MyClassSubA with it's id
@@ -44,7 +44,7 @@
  *  We define the id in MyClassTypes.cpp because MyClassSubA may not be compiled(e.g. platform dependent features), but the id must be defined.
  * 1. create a source file MyClassSubA.cpp and implement the required members
  * 2. In MyClassSubA.cpp, add the following lines
- *      #include "prepost.h" //for PRE_FUNC_ADD()
+ *      #include "QtAV/private/prepost.h" //for PRE_FUNC_ADD()
  *      //we don't want to depend on MyClassTypes.h, so extern
  *      extern MyClassId MyClassId_SubA;
  *      FACTORY_REGISTER_ID_AUTO(MyClass, SubA, "SubA's name")
@@ -66,7 +66,7 @@
  *  just create MyClassSubA.cpp with the content:
  *
  *      #include "MyClass.h"
- *      #include "prepost.h" //for PRE_FUNC_ADD()
+ *      #include "QtAV/private/prepost.h" //for PRE_FUNC_ADD()
  *      MyClassId MyClassId_SubA = some_value; //it can be used somewhere else as "extern"
  *      FACTORY_REGISTER_ID_AUTO(MyClass, SubA, "SubA's name")
  *      void RegisterMyClassSubA_Man() //call it when you need as "extern"
@@ -83,6 +83,14 @@
 /*
  * This should be in header
  */
+#define FACTORY_REGISTER(BASE, _ID, NAME) FACTORY_REGISTER_ID_TYPE(BASE, BASE##Id_##_ID, BASE##_ID, NAME)
+
+#define FACTORY_REGISTER_ID_TYPE(BASE, ID, TYPE, NAME) \
+    FACTORY_REGISTER_ID_TYPE_AUTO(BASE, ID, TYPE, NAME) \
+    void Register##TYPE##_Man() { \
+        FACTORY_REGISTER_ID_TYPE_MAN(BASE, ID, TYPE, NAME); \
+    }
+
 #define FACTORY_REGISTER_ID_AUTO(BASE, _ID, NAME) \
     FACTORY_REGISTER_ID_TYPE_AUTO(BASE, BASE##Id_##_ID, BASE##_ID, NAME)
 
@@ -90,17 +98,20 @@
     FACTORY_REGISTER_ID_TYPE_MAN(BASE, BASE##Id_##_ID, BASE##_ID, NAME)
 
 #define FACTORY_REGISTER_ID_TYPE_MAN(BASE, ID, TYPE, NAME) \
-    BASE##Factory::registerCreator(ID, __create_##TYPE); \
+    BASE##Factory::register_<TYPE>(ID); \
     BASE##Factory::registerIdName(ID, NAME);
 
+/*
+ *  FIXME: __init_##TYPE (only if static) and xxx_Man() has the same content, and are both defined, construtor functions will not be called for gcc5.
+ * maybe also happens for ios
+ * Remove xxx_Man() is also a workaround
+ */
 #define FACTORY_REGISTER_ID_TYPE_AUTO(BASE, ID, TYPE, NAME) \
-    BASE* __create_##TYPE() { return new TYPE();} \
-    static void __init_##TYPE() { \
-        printf("__init_"#TYPE" id=%d\n", ID); fflush(0); \
+    static int __init_##TYPE() { \
         FACTORY_REGISTER_ID_TYPE_MAN(BASE, ID, TYPE, NAME) \
+        return 0; \
     } \
     PRE_FUNC_ADD(__init_##TYPE)
-
 
 /*
  * This should be in header
@@ -112,15 +123,19 @@
     public: \
         typedef T* (*T##Creator)(); \
         static T* create(const ID& id); \
+        template<class C> \
+        static bool register_(const ID& id) { return registerCreator(id, create<C>); } \
         static bool registerCreator(const ID&, const T##Creator&); \
         static bool registerIdName(const ID& id, const std::string& name); \
         static bool unregisterCreator(const ID& id); \
-        static ID id(const std::string& name); \
+        static ID id(const std::string& name, bool caseSensitive = true); \
         static std::string name(const ID &id); \
         static std::vector<ID> registeredIds(); \
         static std::vector<std::string> registeredNames(); \
         static size_t count(); \
         static T* getRandom(); \
+    private: \
+        template<class C> static T* create() { return new C(); } \
     };
 
 /*
@@ -133,7 +148,7 @@
     bool T##Factory::registerCreator(const ID& id, const T##Creator& callback) { return T##FactoryBridge::Instance().registerCreator(id, callback); } \
     bool T##Factory::registerIdName(const ID& id, const std::string& name) { return T##FactoryBridge::Instance().registerIdName(id, name); } \
     bool T##Factory::unregisterCreator(const ID& id) { return T##FactoryBridge::Instance().unregisterCreator(id); } \
-    ID T##Factory::id(const std::string& name) { return T##FactoryBridge::Instance().id(name); } \
+    ID T##Factory::id(const std::string& name, bool caseSensitive) { return T##FactoryBridge::Instance().id(name, caseSensitive); } \
     std::string T##Factory::name(const ID &id) { return T##FactoryBridge::Instance().name(id); } \
     std::vector<ID> T##Factory::registeredIds() { return T##FactoryBridge::Instance().registeredIds(); } \
     std::vector<std::string> T##Factory::registeredNames() { return T##FactoryBridge::Instance().registeredNames(); } \

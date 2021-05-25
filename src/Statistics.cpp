@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2017 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -20,6 +20,7 @@
 ******************************************************************************/
 
 #include "QtAV/Statistics.h"
+#include "utils/ring.h"
 
 namespace QtAV {
 
@@ -27,8 +28,7 @@ Statistics::Common::Common():
     available(false)
   , bit_rate(0)
   , frames(0)
-  , size(0)
-  , d(new Private())
+  , frame_rate(0)
 {
 }
 
@@ -36,45 +36,82 @@ Statistics::AudioOnly::AudioOnly():
     sample_rate(0)
   , channels(0)
   , frame_size(0)
-  , frame_number(0)
   , block_align(0)
-  , d(new Private())
 {
 }
 
+class Statistics::VideoOnly::Private : public QSharedData {
+public:
+    Private()
+        : pts(0)
+        , history(ring<qreal>(30))
+    {}
+    qreal pts;
+    ring<qreal> history;
+};
+
 Statistics::VideoOnly::VideoOnly():
-    fps_guess(0)
-  , fps(0)
-  , avg_frame_rate(0)
-  , width(0)
+    width(0)
   , height(0)
   , coded_width(0)
   , coded_height(0)
   , gop_size(0)
+  , rotate(0)
   , d(new Private())
 {
 }
 
-void Statistics::VideoOnly::putPts(qreal pts)
+Statistics::VideoOnly::VideoOnly(const VideoOnly& v)
+  : width(v.width)
+  , height(v.height)
+  , coded_width(v.coded_width)
+  , coded_height(v.coded_height)
+  , gop_size(v.gop_size)
+  , rotate(v.rotate)
+  , d(v.d)
 {
-    // may be seeking
-    if (pts < 0 || (!d->ptsHistory.isEmpty() && d->ptsHistory.first() >= pts)) {
-        d->ptsHistory.clear();
-        return;
-    }
-    d->ptsHistory.push_back(pts);
-    if (d->ptsHistory.size() < 2)
-        return;
-    if (pts - d->ptsHistory.at(0) > 1) {
-        d->ptsHistory.pop_front();
-    }
 }
 
+Statistics::VideoOnly& Statistics::VideoOnly::operator =(const VideoOnly& v)
+{
+    width = v.width;
+    height = v.height;
+    coded_width = v.coded_width;
+    coded_height = v.coded_height;
+    gop_size = v.gop_size;
+    rotate = v.rotate;
+    d = v.d;
+    return *this;
+}
+
+Statistics::VideoOnly::~VideoOnly()
+{
+}
+
+qreal Statistics::VideoOnly::pts() const
+{
+    return d->pts;
+}
+
+qint64 Statistics::VideoOnly::frameDisplayed(qreal pts)
+{
+    d->pts = pts;
+    const qint64 msecs = QDateTime::currentMSecsSinceEpoch();
+    const qreal t = (double)msecs/1000.0;
+    d->history.push_back(t);
+    return msecs;
+}
+// d->history is not thread safe!
 qreal Statistics::VideoOnly::currentDisplayFPS() const
 {
-    if (d->ptsHistory.size() < 2)
+    if (d->history.empty())
         return 0;
-    return (qreal)d->ptsHistory.size()/(d->ptsHistory.last() - d->ptsHistory.first());
+    // DO NOT use d->history.last-first
+    const qreal dt = (double)QDateTime::currentMSecsSinceEpoch()/1000.0 - d->history.front();
+    // dt should be always > 0 because history stores absolute time
+    if (qFuzzyIsNull(dt))
+        return 0;
+    return (qreal)d->history.size()/dt;
 }
 
 Statistics::Statistics()
@@ -87,11 +124,12 @@ Statistics::~Statistics()
 
 void Statistics::reset()
 {
-    url = "";
+    url = QString();
     audio = Common();
     video = Common();
     audio_only = AudioOnly();
     video_only = VideoOnly();
+    metadata.clear();
 }
 
 } //namespace QtAV

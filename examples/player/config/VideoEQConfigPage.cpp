@@ -1,27 +1,21 @@
 /******************************************************************************
-    VideoEQConfigPage.cpp: description
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
-    This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Lesser General Public
-    License as published by the Free Software Foundation; either
-    version 2.1 of the License, or (at your option) any later version.
+*   This file is part of QtAV
 
-    This library is distributed in the hope that it will be useful,
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Lesser General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public
-    License along with this library; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-
-    Alternatively, this file may be used under the terms of the GNU
-    General Public License version 3.0 as published by the Free Software
-    Foundation and appearing in the file LICENSE.GPL included in the
-    packaging of this file.  Please review the following information to
-    ensure the GNU General Public License version 3.0 requirements will be
-    met: http://www.gnu.org/copyleft/gpl.html.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
 
@@ -31,18 +25,20 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QLayout>
-#include "Slider.h"
+#include "../Slider.h"
 
 VideoEQConfigPage::VideoEQConfigPage(QWidget *parent) :
     QWidget(parent)
 {
+    mEngine = SWScale;
     QGridLayout *gl = new QGridLayout();
     setLayout(gl);
 
     QLabel *label = new QLabel();
     label->setText(tr("Engine"));
     mpEngine = new QComboBox();
-    mpEngine->addItem("libswscale");
+    setEngines(QVector<Engine>(1, SWScale));
+    connect(mpEngine, SIGNAL(currentIndexChanged(int)), SLOT(onEngineChangedByUI()));
 
     int r = 0, c = 0;
     gl->addWidget(label, r, c);
@@ -56,15 +52,16 @@ VideoEQConfigPage::VideoEQConfigPage(QWidget *parent) :
     } sliders[] = {
         { &mpBSlider, tr("Brightness") },
         { &mpCSlider, tr("Constrast") },
+        { &mpHSlider, tr("Hue") },
         { &mpSSlider, tr("Saturation") },
-        { 0, "" }
+        { 0, QString() }
     };
     for (int i = 0; sliders[i].slider; ++i) {
         QLabel *label = new QLabel(sliders[i].text);
         *sliders[i].slider = new Slider();
         QSlider *slider = *sliders[i].slider;
         slider->setOrientation(Qt::Horizontal);
-        slider->setTickInterval(10);
+        slider->setTickInterval(2);
         slider->setRange(-100, 100);
         slider->setValue(0);
 
@@ -83,6 +80,7 @@ VideoEQConfigPage::VideoEQConfigPage(QWidget *parent) :
 
     connect(mpBSlider, SIGNAL(valueChanged(int)), SIGNAL(brightnessChanged(int)));
     connect(mpCSlider, SIGNAL(valueChanged(int)), SIGNAL(contrastChanged(int)));
+    connect(mpHSlider, SIGNAL(valueChanged(int)), SIGNAL(hueChanegd(int)));
     connect(mpSSlider, SIGNAL(valueChanged(int)), SIGNAL(saturationChanged(int)));
     connect(mpGlobal, SIGNAL(toggled(bool)), SLOT(onGlobalSet(bool)));
     connect(mpResetButton, SIGNAL(clicked()), SLOT(onReset()));
@@ -90,12 +88,74 @@ VideoEQConfigPage::VideoEQConfigPage(QWidget *parent) :
 
 void VideoEQConfigPage::onGlobalSet(bool g)
 {
+    Q_UNUSED(g);
+}
 
+void VideoEQConfigPage::setEngines(const QVector<Engine> &engines)
+{
+    mpEngine->clear();
+    QVector<Engine> es(engines);
+    qSort(es);
+    mEngines = es;
+    foreach (Engine e, es) {
+        if (e == SWScale) {
+            mpEngine->addItem(QString::fromLatin1("libswscale"));
+        } else if (e == GLSL) {
+            mpEngine->addItem(QString::fromLatin1("GLSL"));
+        } else if (e == XV) {
+            mpEngine->addItem(QString::fromLatin1("XV"));
+        }
+    }
+}
+
+void VideoEQConfigPage::setEngine(Engine engine)
+{
+    if (engine == mEngine)
+        return;
+    mEngine = engine;
+    if (!mEngines.isEmpty()) {
+        mpEngine->setCurrentIndex(mEngines.indexOf(engine));
+    }
+    emit engineChanged();
+}
+
+VideoEQConfigPage::Engine VideoEQConfigPage::engine() const
+{
+    return mEngine;
+}
+
+qreal VideoEQConfigPage::brightness() const
+{
+    return (qreal)mpBSlider->value()/100.0;
+}
+
+qreal VideoEQConfigPage::contrast() const
+{
+    return (qreal)mpCSlider->value()/100.0;
+}
+
+qreal VideoEQConfigPage::hue() const
+{
+    return (qreal)mpHSlider->value()/100.0;
+}
+
+qreal VideoEQConfigPage::saturation() const
+{
+    return (qreal)mpSSlider->value()/100.0;
 }
 
 void VideoEQConfigPage::onReset()
 {
     mpBSlider->setValue(0);
     mpCSlider->setValue(0);
+    mpHSlider->setValue(0);
     mpSSlider->setValue(0);
+}
+
+void VideoEQConfigPage::onEngineChangedByUI()
+{
+    if (mpEngine->currentIndex() >= mEngines.size() || mpEngine->currentIndex() < 0)
+        return;
+    mEngine = mEngines.at(mpEngine->currentIndex());
+    emit engineChanged();
 }

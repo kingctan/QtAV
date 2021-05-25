@@ -1,3 +1,23 @@
+/******************************************************************************
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
+
+*   This file is part of QtAV
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+******************************************************************************/
+
 #include "StatisticsView.h"
 #include <QtCore/QTimerEvent>
 #include <QTreeWidget>
@@ -20,17 +40,19 @@ QStringList getCommonInfoKeys() {
     return QStringList()
             << QObject::tr("Available")
             << QObject::tr("Codec")
+            << QObject::tr("Decoder")
+            << QObject::tr("Decoder detail")
             << QObject::tr("Total time")
             << QObject::tr("Start time")
             << QObject::tr("Bit rate")
             << QObject::tr("Frames")
+            << QObject::tr("FPS") // avg_frame_rate. guessed by FFmpeg
                ;
 }
 
 QStringList getVideoInfoKeys() {
     return getCommonInfoKeys()
             << QObject::tr("FPS Now") //current display fps
-            << QObject::tr("FPS") // avg_frame_rate. guessed by FFmpeg
             << QObject::tr("Pixel format")
             << QObject::tr("Size") //w x h
             << QObject::tr("Coded size") // w x h
@@ -51,38 +73,43 @@ QVariantList getBaseInfoValues(const Statistics& s) {
     return QVariantList()
             << s.url
             << s.format
-            << QString::number(s.bit_rate/1000) + " Kb/s"
-            << s.start_time.toString("HH:mm:ss")
-            << s.duration.toString("HH:mm:ss")
+            << QString::number(s.bit_rate/1000).append(QString::fromLatin1(" Kb/s"))
+            << s.start_time.toString(QString::fromLatin1("HH:mm:ss"))
+            << s.duration.toString(QString::fromLatin1("HH:mm:ss"))
                ;
 }
 
 QList<QVariant> getVideoInfoValues(const Statistics& s) {
     return QList<QVariant>()
             << s.video.available
-            << s.video.codec + " (" + s.video.codec_long + ")"
-            << s.video.total_time.toString("HH:mm:ss")
-            << s.video.start_time.toString("HH:mm:ss")
-            << QString::number(s.video.bit_rate/1000) + " Kb/s"
+            << QString::fromLatin1("%1 (%2)").arg(s.video.codec).arg(s.video.codec_long)
+            << s.video.decoder
+            << s.video.decoder_detail
+            << s.video.total_time.toString(QString::fromLatin1("HH:mm:ss"))
+            << s.video.start_time.toString(QString::fromLatin1("HH:mm:ss"))
+            << QString::number(s.video.bit_rate/1000).append(QString::fromLatin1(" Kb/s"))
             << s.video.frames
-            << s.video_only.avg_frame_rate //TODO: dynamic compute
-            << s.video_only.avg_frame_rate
+            << s.video.frame_rate
+            << s.video.frame_rate
             << s.video_only.pix_fmt
-            << QString::number(s.video_only.width) + "x" + QString::number(s.video_only.height)
-            << QString::number(s.video_only.coded_width) + "x" + QString::number(s.video_only.coded_height)
+            << QString::fromLatin1("%1x%2").arg(s.video_only.width).arg(s.video_only.height)
+            << QString::fromLatin1("%1x%2").arg(s.video_only.coded_width).arg(s.video_only.coded_height)
             << s.video_only.gop_size
                ;
 }
 QList<QVariant> getAudioInfoValues(const Statistics& s) {
     return QList<QVariant>()
             << s.audio.available
-            << s.audio.codec + " (" + s.audio.codec_long + ")"
-            << s.audio.total_time.toString("HH:mm:ss")
-            << s.audio.start_time.toString("HH:mm:ss")
-            << QString::number(s.audio.bit_rate/1000) + " Kb/s"
+            << QString::fromLatin1("%1 (%2)").arg(s.audio.codec).arg(s.audio.codec_long)
+            << s.audio.decoder
+            << s.audio.decoder_detail
+            << s.audio.total_time.toString(QString::fromLatin1("HH:mm:ss"))
+            << s.audio.start_time.toString(QString::fromLatin1("HH:mm:ss"))
+            << QString::number(s.audio.bit_rate/1000).append(QString::fromLatin1(" Kb/s"))
             << s.audio.frames
+            << s.audio.frame_rate
             << s.audio_only.sample_fmt
-            << QString::number(s.audio_only.sample_rate) + " Hz"
+            << QString::number(s.audio_only.sample_rate).append(QString::fromLatin1(" Hz"))
             << s.audio_only.channels
             << s.audio_only.channel_layout
             << s.audio_only.frame_size
@@ -101,16 +128,26 @@ StatisticsView::StatisticsView(QWidget *parent) :
     setModal(false);
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
     mpView = new QTreeWidget();
-    mpView->setHeaderHidden(true);
+    mpView->setAnimated(true);
+    mpView->setHeaderHidden(false);
     mpView->setColumnCount(2);
+    mpView->headerItem()->setText(0, tr("Key"));
+    mpView->headerItem()->setText(1, tr("Value"));
     initBaseItems(&mBaseItems);
     mpView->addTopLevelItems(mBaseItems);
+    mpMetadata = new QTreeWidgetItem();
+    mpMetadata->setText(0, QObject::tr("Metadata"));
+    mpView->addTopLevelItem(mpMetadata);
     QTreeWidgetItem *item = createNodeWithItems(mpView, QObject::tr("Video"), getVideoInfoKeys(), &mVideoItems);
-    mpFPS = item->child(6);
+    mpFPS = item->child(9);
     //mpVideoBitRate =
+    mpVideoMetadata = new QTreeWidgetItem(item);
+    mpVideoMetadata->setText(0, QObject::tr("Metadata"));
     mpView->addTopLevelItem(item);
     item = createNodeWithItems(mpView, QObject::tr("Audio"), getAudioInfoKeys(), &mAudioItems);
     //mpAudioBitRate =
+    mpAudioMetadata = new QTreeWidgetItem(item);
+    mpAudioMetadata->setText(0, QObject::tr("Metadata"));
     mpView->addTopLevelItem(item);
     mpView->resizeColumnToContents(0); //call this after content is done
 
@@ -153,6 +190,9 @@ void StatisticsView::setStatistics(const Statistics& s)
         }
         ++i;
     }
+    setMetadataItem(mpMetadata, s.metadata);
+    setMetadataItem(mpVideoMetadata, s.video.metadata);
+    setMetadataItem(mpAudioMetadata, s.audio.metadata);
 }
 
 void StatisticsView::hideEvent(QHideEvent *e)
@@ -179,7 +219,7 @@ void StatisticsView::timerEvent(QTimerEvent *e)
 void StatisticsView::initBaseItems(QList<QTreeWidgetItem *> *items)
 {
     QTreeWidgetItem *item = 0;
-    foreach(QString key, getBaseInfoKeys()) {
+    foreach(const QString& key, getBaseInfoKeys()) {
         item = new QTreeWidgetItem(0);
         item->setData(0, Qt::DisplayRole, key);
         items->append(item);
@@ -191,7 +231,7 @@ QTreeWidgetItem* StatisticsView::createNodeWithItems(QTreeWidget *view, const QS
     QTreeWidgetItem *nodeItem = new QTreeWidgetItem(view);
     nodeItem->setData(0, Qt::DisplayRole, name);
     QTreeWidgetItem *item = 0;
-    foreach(QString key, itemNames) {
+    foreach(const QString& key, itemNames) {
         item = new QTreeWidgetItem(nodeItem);
         item->setData(0, Qt::DisplayRole, key);
         nodeItem->addChild(item);
@@ -200,4 +240,18 @@ QTreeWidgetItem* StatisticsView::createNodeWithItems(QTreeWidget *view, const QS
     }
     nodeItem->setExpanded(true);
     return nodeItem;
+}
+
+void StatisticsView::setMetadataItem(QTreeWidgetItem *parent, const QHash<QString, QString> &metadata)
+{
+    if (parent->childCount() > 0) {
+        QList<QTreeWidgetItem *> children(parent->takeChildren());
+        qDeleteAll(children);
+    }
+    QHash<QString, QString>::const_iterator it = metadata.constBegin();
+    for (;it != metadata.constEnd(); ++it) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(parent);
+        item->setText(0, it.key());
+        item->setText(1, it.value());
+    }
 }

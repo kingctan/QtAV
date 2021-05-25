@@ -1,6 +1,6 @@
 /******************************************************************************
     VideoWall:  this file is part of QtAV examples
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -31,16 +31,16 @@
 #include <QMimeData>
 #include <QtCore/QUrl>
 #include <QtAV/AudioOutput.h>
-#include <QtAV/OSDFilter.h>
-#include <QtAV/VideoRendererTypes.h>
+#include <QtAVWidgets>
 
 using namespace QtAV;
 const int kSyncInterval = 2000;
 
 VideoWall::VideoWall(QObject *parent) :
     QObject(parent),r(3),c(3),view(0),menu(0)
-  , vid("qpainter")
+  , vid(QString::fromLatin1("qpainter"))
 {
+    QtAV::Widgets::registerRenderers();
     clock = new AVClock(this);
     clock->setClockType(AVClock::ExternalClock);
     view = new QWidget;
@@ -50,6 +50,7 @@ VideoWall::VideoWall(QObject *parent) :
         view->move(QPoint(0, 0));
         view->show();
     }
+    view->installEventFilter(this);
 }
 
 VideoWall::~VideoWall()
@@ -63,7 +64,7 @@ VideoWall::~VideoWall()
             player->stop();
             VideoRenderer* renderer = player->renderer();
             if (renderer->widget()) {
-                renderer->widget()->QWidget::close(); //TODO: rename
+                renderer->widget()->close(); //TODO: rename
                 if (!renderer->widget()->testAttribute(Qt::WA_DeleteOnClose) && !renderer->widget()->parent())
                     delete renderer;
                 delete player;
@@ -106,7 +107,7 @@ void VideoWall::show()
             player->stop();
             VideoRenderer* renderer = player->renderer();
             if (renderer->widget()) {
-                renderer->widget()->QWidget::close(); //TODO: rename
+                renderer->widget()->close();
                 if (!renderer->widget()->testAttribute(Qt::WA_DeleteOnClose) && !renderer->widget()->parent())
                     delete renderer;
                 delete player;
@@ -128,29 +129,28 @@ void VideoWall::show()
     }
 
     VideoRendererId v = VideoRendererId_Widget;
-    if (vid == "gl")
-        v = VideoRendererId_GLWidget;
-    else if (vid == "d2d")
+    if (vid == QLatin1String("gl"))
+        v = VideoRendererId_GLWidget2;
+    else if (vid == QLatin1String("opengl"))
+        v = VideoRendererId_OpenGLWidget;
+    else if (vid == QLatin1String("d2d"))
         v = VideoRendererId_Direct2D;
-    else if (vid == "gdi")
+    else if (vid == QLatin1String("gdi"))
         v = VideoRendererId_GDI;
-    else if (vid == "xv")
+    else if (vid == QLatin1String("x11"))
+        v = VideoRendererId_X11;
+    else if (vid == QLatin1String("xv"))
         v = VideoRendererId_XV;
     for (int i = 0; i < r; ++i) {
         for (int j = 0; j < c; ++j) {
-            VideoRenderer* renderer = VideoRendererFactory::create(v);
-            //renderer->widget()->setParent(view);
-            renderer->widget()->setWindowFlags(Qt::FramelessWindowHint);
+            VideoRenderer* renderer = VideoRenderer::create(v);
+            renderer->widget()->setWindowFlags(renderer->widget()->windowFlags()| Qt::FramelessWindowHint);
+            renderer->widget()->setAttribute(Qt::WA_DeleteOnClose);
             renderer->widget()->resize(w, h);
             renderer->widget()->move(j*w, i*h);
-            renderer->widget()->show();
-            if (renderer->osdFilter()) {
-                renderer->osdFilter()->setShowType(OSD::ShowNone);
-            }
             AVPlayer *player = new AVPlayer;
             player->setRenderer(renderer);
-            player->masterClock()->setClockAuto(false);
-            player->masterClock()->setClockType(AVClock::ExternalClock);
+            connect(player, SIGNAL(started()), SLOT(changeClockType()));
             players.append(player);
             if (view)
                 ((QGridLayout*)view->layout())->addWidget(renderer->widget(), i, j);
@@ -185,13 +185,11 @@ void VideoWall::openLocalFile()
     if (file.isEmpty())
         return;
     stop();
-    foreach (AVPlayer* player, players) {
-        player->load(file);
-    }
     clock->reset();
     clock->start();
     timer_id = startTimer(kSyncInterval);
     foreach (AVPlayer* player, players) {
+        player->setFile(file); //TODO: load all players before play
         player->play();
     }
 }
@@ -202,22 +200,20 @@ void VideoWall::openUrl()
     if (url.isEmpty())
         return;
     stop();
-    foreach (AVPlayer* player, players) {
-        player->load(url);
-    }
     clock->reset();
     clock->start();
     timer_id = startTimer(kSyncInterval);
     foreach (AVPlayer* player, players) {
-        player->play();
+        player->setFile(url);
+        player->play(); //TODO: load all players before play
     }
 }
 
 void VideoWall::about()
 {
-    QMessageBox::about(0, tr("About QtAV"), "<h3>" + tr("This is a demo for playing and synchronising multiple players") + "</h3>"
-                       + "\n\n"
-                       + aboutQtAV_HTML());
+    QMessageBox::about(0, tr("About QtAV"), QString::fromLatin1("<h3>%1</h3>\n\n%2")
+                       .arg(tr("This is a demo for playing and synchronising multiple players"))
+                       .arg(aboutQtAV_HTML()));
 }
 
 void VideoWall::help()
@@ -264,7 +260,7 @@ bool VideoWall::eventFilter(QObject *watched, QEvent *event)
             break;
         case Qt::Key_N: //check playing?
             foreach (AVPlayer* player, players) {
-                player->playNextFrame();
+                player->stepForward();
             }
             break;
 
@@ -289,7 +285,7 @@ bool VideoWall::eventFilter(QObject *watched, QEvent *event)
             stop();
             break;
         case Qt::Key_Space: //check playing?
-            clock->pause(!clock->isActive());
+            clock->pause(!clock->isPaused());
             foreach (AVPlayer* player, players) {
                 player->pause(!player->isPaused());
             }
@@ -322,19 +318,23 @@ bool VideoWall::eventFilter(QObject *watched, QEvent *event)
                 }
             }
             break;
-        case Qt::Key_Left:
+        case Qt::Key_Left: {
             qDebug("<-");
-            clock->updateExternalClock(clock->value()*1000.0 - 2000.0);
-            /*foreach (AVPlayer* player, players) {
-                player->seekBackward();
-            }*/
+            const qint64 newPos = clock->value()*1000.0 - 2000.0;
+            clock->updateExternalClock(newPos);
+            foreach (AVPlayer* player, players) {
+                player->setPosition(newPos);
+            }
+        }
             break;
-        case Qt::Key_Right:
+        case Qt::Key_Right: {
             qDebug("->");
-            clock->updateExternalClock(clock->value()*1000.0 + 2000.0);
-            /*foreach (AVPlayer* player, players) {
-                player->seekForward();
-            }*/
+            const qint64 newPos = clock->value()*1000.0 + 2000.0;
+            clock->updateExternalClock(newPos);
+            foreach (AVPlayer* player, players) {
+                player->setPosition(newPos);
+            }
+        }
             break;
         case Qt::Key_M:
             foreach (AVPlayer* player, players) {
@@ -396,4 +396,11 @@ void VideoWall::timerEvent(QTimerEvent *e)
     foreach (AVPlayer *player, players) {
         player->masterClock()->updateExternalClock(*clock);
     }
+}
+
+void VideoWall::changeClockType()
+{
+    AVPlayer* player = qobject_cast<AVPlayer*>(sender());
+    player->masterClock()->setClockAuto(false);
+    player->masterClock()->setClockType(AVClock::ExternalClock);
 }

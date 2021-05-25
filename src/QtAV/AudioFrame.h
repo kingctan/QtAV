@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -23,22 +23,57 @@
 #define QTAV_AUDIOFRAME_H
 
 #include <QtAV/Frame.h>
+#include <QtAV/AudioFormat.h>
 
 namespace QtAV {
-
+class AudioResampler;
 class AudioFramePrivate;
 class Q_AV_EXPORT AudioFrame : public Frame
 {
     Q_DECLARE_PRIVATE(AudioFrame)
 public:
-    AudioFrame();
+    //data must be complete
+    /*!
+     * \brief AudioFrame
+     * construct an audio frame from a given buffer and format
+     */
+    AudioFrame(const AudioFormat& format = AudioFormat(), const QByteArray& data = QByteArray());
     AudioFrame(const AudioFrame &other);
     virtual ~AudioFrame();
-
     AudioFrame &operator =(const AudioFrame &other);
 
+    bool isValid() const;
+    operator bool() const { return isValid();}
+
+    /*!
+     * \brief data
+     * Audio data. clone is called if frame is not constructed with a QByteArray.
+     * \return
+     */
+    QByteArray data();
+    virtual int channelCount() const;
+    /*!
+     * Deep copy. If you want to copy data from somewhere, knowing the format, width and height,
+     * then you can use clone().
+     */
+    AudioFrame clone() const;
+    AudioFrame mid(int pos, int len = -1) const;
+    void prepend(AudioFrame &other);
+    AudioFormat format() const;
+    void setSamplesPerChannel(int samples);
+    // may change after resampling
+    int samplesPerChannel() const;
+    AudioFrame to(const AudioFormat& fmt) const;
+    //AudioResamplerId
+    void setAudioResampler(AudioResampler *conv); //TODO: remove
+    /*!
+        Returns the number of microseconds represented by \a bytes in this format.
+        Returns 0 if this format is not valid.
+        Note that some rounding may occur if \a bytes is not an exact multiple
+        of the number of bytes per frame.
+    */
+    qint64 duration() const;
 };
-
 } //namespace QtAV
-
+Q_DECLARE_METATYPE(QtAV::AudioFrame)
 #endif // QTAV_AUDIOFRAME_H

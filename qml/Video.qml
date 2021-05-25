@@ -1,6 +1,6 @@
-
+﻿
 import QtQuick 2.0
-import QtAV 1.3
+import QtAV 1.7
 
 /*!
     \qmltype Video
@@ -17,7 +17,7 @@ import QtAV 1.3
 
     \qml
     import QtQuick 2.0
-    import QtAV 1.3
+    import QtAV 1.7
 
     Video {
         id: video
@@ -62,6 +62,36 @@ import QtAV 1.3
 Item {
     id: video
 
+    property alias startPosition: player.startPosition
+    property alias stopPosition: player.stopPosition
+    property alias videoFiltersGPU: videoOut.filters
+    property alias audioFilters: player.audioFilters
+    property alias videoFilters: player.videoFilters
+    property alias audioBackends: player.audioBackends
+    property alias supportedAudioBackends: player.supportedAudioBackends
+    property alias backgroundColor: videoOut.backgroundColor
+    property alias brightness: videoOut.brightness
+    property alias contrast: videoOut.contrast
+    property alias hue: videoOut.hue
+    property alias saturation: videoOut.saturation
+    property alias frameSize: videoOut.frameSize
+    property alias sourceAspectRatio: videoOut.sourceAspectRatio
+    property alias opengl: videoOut.opengl
+    property alias fastSeek: player.fastSeek
+    property alias timeout: player.timeout
+    property alias abortOnTimeout: player.abortOnTimeout
+    property alias subtitle: subtitle
+    property alias subtitleText: text_sub // not for ass.
+    property alias videoCapture: player.videoCapture
+    property alias audioTrack: player.audioTrack
+    property alias videoTrack: player.videoTrack
+    property alias externalAudio: player.externalAudio
+    property alias internalAudioTracks: player.internalAudioTracks
+    property alias externalAudioTracks: player.externalAudioTracks
+    property alias internalVideoTracks: player.internalVideoTracks
+    property alias internalSubtitleTracks: player.internalSubtitleTracks
+    property alias internalSubtitleTrack: player.internalSubtitleTrack
+    property alias notifyInterval: player.notifyInterval
     /*** Properties of VideoOutput ***/
     /*!
         \qmlproperty enumeration Video::fillMode
@@ -91,11 +121,18 @@ Item {
         The orientation of the \c Video in degrees. Only multiples of 90
         degrees is supported, that is 0, 90, 180, 270, 360, etc.
     */
-    //property alias orientation:         videoOut.orientation
+    property alias orientation:         videoOut.orientation
 
 
     /*** Properties of MediaPlayer ***/
 
+    /*!
+      A list of video codec names in priority order.
+      Example: videoCodecPriority: ["VAAPI", "FFmpeg"]
+      Default is ["FFmpeg"]
+    s*/
+    property alias videoCodecPriority:   player.videoCodecPriority
+    property alias channelLayout:        player.channelLayout
     /*!
         \qmlproperty enumeration Video::playbackState
 
@@ -128,7 +165,14 @@ Item {
         from 0.0 (empty) to 1.0
         (full).
     */
-    //property alias bufferProgress:  player.bufferProgress
+    property alias bufferProgress:  player.bufferProgress
+
+    /*!
+        \qmlproperty int Video::bufferSize
+
+        This property holds the buffer value.
+    */
+    property alias bufferSize:  player.bufferSize
 
     /*!
         \qmlproperty int Video::duration
@@ -158,14 +202,14 @@ Item {
         instantiated.
         \endlist
     */
-    //property alias error:           player.error
+    property alias error:           player.error
 
     /*!
         \qmlproperty string Video::errorString
 
         This property holds a string describing the current error condition in more detail.
     */
-    //property alias errorString:     player.errorString
+    property alias errorString:     player.errorString
 
     /*!
         \qmlproperty enumeration Video::availability
@@ -204,7 +248,7 @@ Item {
     property alias hasVideo:        player.hasVideo
 
     /* documented below due to length of metaData documentation */
-    //property alias metaData:        player.metaData
+    property alias metaData:        player.metaData
 
     /*!
         \qmlproperty bool Video::muted
@@ -219,7 +263,7 @@ Item {
         This property holds the rate at which video is played at as a multiple
         of the normal rate.
     */
-    //property alias playbackRate:    player.playbackRate
+    property alias playbackRate:    player.playbackRate
 
     /*!
         \qmlproperty int Video::position
@@ -230,7 +274,7 @@ Item {
 
         \sa seek()
     */
-    //property alias position:        player.position
+    property alias position:        player.position
 
     /*!
         \qmlproperty bool Video::seekable
@@ -266,7 +310,7 @@ Item {
         \li MediaPlayer.UnknownStatus - the status of the media cannot be determined.
         \endlist
     */
-    //property alias status:          player.status
+    property alias status:          player.status
 
     /*!
         \qmlproperty real Video::volume
@@ -305,10 +349,34 @@ Item {
     */
     signal playing
 
-    VideoOutput {
+    signal seekFinished
+
+    VideoOutput2 {
         id: videoOut
         anchors.fill: video
         source: player
+    }
+
+    SubtitleItem {
+        id: ass_sub
+        rotation: -videoOut.orientation
+        fillMode: videoOut.fillMode
+        source: subtitle
+        anchors.fill: videoOut
+    }
+    Text {
+        id: text_sub
+        rotation: -videoOut.orientation
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignBottom
+        font {
+            pointSize: 20
+            bold: true
+        }
+        style: Text.Outline
+        styleColor: "blue"
+        color: "white"
+        anchors.fill: videoOut
     }
 
     MediaPlayer {
@@ -316,6 +384,15 @@ Item {
         onPaused:  video.paused()
         onStopped: video.stopped()
         onPlaying: video.playing()
+        onSeekFinished: video.seekFinished()
+    }
+
+    function stepForward() {
+        player.stepForward()
+    }
+
+    function stepBackward() {
+        player.stepBackward()
     }
 
     /*!
@@ -360,6 +437,22 @@ Item {
         player.seek(offset);
     }
 
+    Subtitle {
+        id: subtitle
+        player: player
+        onContentChanged: {
+            if (!canRender || !ass_sub.visible)
+                text_sub.text = text
+        }
+        onEngineChanged: { // assume a engine canRender is only used as a renderer
+            ass_sub.visible = canRender
+            text_sub.visible = !canRender
+        }
+        onEnabledChanged: {
+            ass_sub.visible = enabled
+            text_sub.visible = enabled
+        }
+    }
 }
 
 // ***************************************

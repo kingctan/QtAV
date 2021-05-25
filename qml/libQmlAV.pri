@@ -1,5 +1,5 @@
 # qmake library building template pri file
-# Copyright (C) 2011-2013 Wang Bin <wbsecg1@gmail.com>
+# Copyright (C) 2011-2015 Wang Bin <wbsecg1@gmail.com>
 # Shanghai, China.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -48,8 +48,19 @@ NAME = QmlAV
 }
 eval(LIB$$upper($$NAME)_PRI_INCLUDED = 1)
 
-LIB_VERSION = 1.3.1 #0.x.y may be wrong for dll
-isEmpty(STATICLINK): STATICLINK = 0  #1 or 0. use static lib or not
+LIB_VERSION = $$QTAV_VERSION #0.x.y may be wrong for dll
+# If user haven't supplied STATICLINK, then auto-detect
+isEmpty(STATICLINK) {
+  static|contains(CONFIG, staticlib) {
+    STATICLINK = 1
+  } else {
+    STATICLINK = 0
+  }
+  # Override for ios. Dynamic link is only supported
+  # in iOS 8.1.
+  ios:STATICLINK = 1
+}
+isEqual(STATICLINK, 1):DEFINES += BUILD_$$upper($$NAME)_STATIC
 
 TEMPLATE += fakelib
 PROJECT_TARGETNAME = $$qtLibraryTarget($$NAME)
@@ -62,11 +73,6 @@ CONFIG += depend_includepath #?
 
 PROJECT_SRCPATH = $$PWD
 PROJECT_LIBDIR = $$qtLongName($$BUILD_DIR/lib)
-#for system include path
-*msvc* {
-} else {
-    QMAKE_CXXFLAGS += -isystem $$PROJECT_SRCPATH -isystem $$PROJECT_SRCPATH/..
-}
 INCLUDEPATH *= $$PROJECT_SRCPATH $$PROJECT_SRCPATH/.. $$PROJECT_SRCPATH/$$NAME
 DEPENDPATH *= $$PROJECT_SRCPATH
 #QMAKE_LFLAGS_RPATH += #will append to rpath dir
@@ -88,7 +94,6 @@ DEPENDPATH *= $$PROJECT_SRCPATH
 	}
 } else {
 	#Add your additional configuration first. e.g.
-
 #	win32: LIBS += -lUser32
 # The following may not need to change
     !CONFIG(plugin) {
@@ -98,11 +103,11 @@ DEPENDPATH *= $$PROJECT_SRCPATH
     }
         TARGET = $$PROJECT_TARGETNAME ##I commented out this before, why?
         CONFIG *= create_prl #
-	isEqual(STATICLINK, 1) {
+        DEFINES += BUILD_$$upper($$NAME)_LIB #win32-msvc*
+        isEqual(STATICLINK, 1) {
 		CONFIG -= shared dll ##otherwise the following shared is true, why?
 		CONFIG *= staticlib
 	} else {
-                DEFINES += BUILD_$$upper($$NAME)_LIB #win32-msvc*
 		CONFIG *= shared #shared includes dll
 	}
 
@@ -111,7 +116,7 @@ DEPENDPATH *= $$PROJECT_SRCPATH
             !isEqual(DESTDIR, $$BUILD_DIR/bin): DLLDESTDIR = $$BUILD_DIR/bin #copy shared lib there
         }
 #QMAKE_POST_LINK+=: just append as a string to previous QMAKE_POST_LINK
-                CONFIG(release, debug|release): !isEmpty(QMAKE_STRIP): QMAKE_POST_LINK = $$quote(-$$QMAKE_STRIP $$shell_path($$DESTDIR/$$qtSharedLib($$NAME)))
+                CONFIG(release, debug|release): !isEmpty(QMAKE_STRIP):!mac_framework: QMAKE_POST_LINK = $$quote(-$$QMAKE_STRIP $$shell_path($$DESTDIR/$$qtSharedLib($$NAME)))
 		#copy from the pro creator creates.
 		symbian {
 			MMP_RULES += EXPORTUNFROZEN
@@ -132,25 +137,7 @@ DEPENDPATH *= $$PROJECT_SRCPATH
 		INSTALLS += target
 	}
 }
-
-unix {
-    LIBS += -L/usr/local/lib
-# $$[QT_INSTALL_LIBS] and $$DESTDIR and pro dir will be auto added to QMAKE_RPATHDIR if QMAKE_RPATHDIR is not empty
-# Current (sub)project dir is auto added to the first value as prefix. e.g. QMAKE_RPATHDIR = .. ==> -Wl,-rpath,ROOT/..
-# Executable dir search: ld -z origin, g++ -Wl,-R,'$ORIGIN', in makefile -Wl,-R,'$$ORIGIN'
-# Working dir search: "."
-# TODO: for macx. see qtcreator/src/rpath.pri. (-rpath define rpath, @rpath exapand to that path?)
-    macx {
-        QMAKE_LFLAGS_SONAME = -Wl,-install_name,@rpath/Frameworks/
-        QMAKE_LFLAGS += -Wl,-rpath,@loader_path/../,-rpath,@executable_path/../
-    } else {
-        RPATHDIR = \$\$ORIGIN \$\$ORIGIN/lib . /usr/local/lib
-# $$PROJECT_LIBDIR only for host == target. But QMAKE_TARGET.arch is only available on windows. QT_ARCH is bad, e.g. QT_ARCH=i386 while QMAKE_HOST.arch=i686
-# https://bugreports.qt-project.org/browse/QTBUG-30263
-        isEmpty(CROSS_COMPILE): RPATHDIR *= $$PROJECT_LIBDIR
-        QMAKE_LFLAGS *= -Wl,-z,origin \'-Wl,-rpath,$$join(RPATHDIR, ":")\'
-    }
-}
+!no_rpath:!cross_compile:set_rpath($$PROJECT_LIBDIR)
 
 unset(LIB_VERSION)
 unset(PROJECT_SRCPATH)

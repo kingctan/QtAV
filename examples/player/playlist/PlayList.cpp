@@ -1,34 +1,27 @@
 /******************************************************************************
-    PlayList.cpp: description
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
 
-    This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Lesser General Public
-    License as published by the Free Software Foundation; either
-    version 2.1 of the License, or (at your option) any later version.
+*   This file is part of QtAV
 
-    This library is distributed in the hope that it will be useful,
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Lesser General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public
-    License along with this library; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-
-    Alternatively, this file may be used under the terms of the GNU
-    General Public License version 3.0 as published by the Free Software
-    Foundation and appearing in the file LICENSE.GPL included in the
-    packaging of this file.  Please review the following information to
-    ensure the GNU General Public License version 3.0 requirements will be
-    met: http://www.gnu.org/copyleft/gpl.html.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
-
 
 #include "PlayList.h"
 #include "PlayListModel.h"
 #include "PlayListDelegate.h"
-#include "config/Config.h"
+#include "common/common.h"
 #include <QFileDialog>
 #include <QListView>
 #include <QLayout>
@@ -49,7 +42,7 @@ PlayList::PlayList(QWidget *parent) :
     mpListView->setItemDelegate(mpDelegate);
     mpListView->setSelectionMode(QAbstractItemView::ExtendedSelection); //ctrl,shift
     mpListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    mpListView->setToolTip("Ctrl/Shift + " + tr("Click to select multiple"));
+    mpListView->setToolTip(QString::fromLatin1("Ctrl/Shift + ") + tr("Click to select multiple"));
     QVBoxLayout *vbl = new QVBoxLayout;
     setLayout(vbl);
     vbl->addWidget(mpListView);
@@ -58,10 +51,10 @@ PlayList::PlayList(QWidget *parent) :
     mpClear = new QToolButton(0);
     mpClear->setText(tr("Clear"));
     mpRemove = new QToolButton(0);
-    mpRemove->setText("-");
+    mpRemove->setText(QString::fromLatin1("-"));
     mpRemove->setToolTip(tr("Remove selected items"));
     mpAdd = new QToolButton(0);
-    mpAdd->setText("+");
+    mpAdd->setText(QString::fromLatin1("+"));
 
     hbl->addWidget(mpClear);
     hbl->addSpacing(width());
@@ -133,8 +126,17 @@ void PlayList::insertItemAt(const PlayListItem &item, int row)
         // +1 because new row is to be inserted
         mpModel->removeRows(mMaxRows, mpModel->rowCount() - mMaxRows + 1);
     }
+    int i = mpModel->items().indexOf(item, row+1);
+    if (i > 0) {
+        mpModel->removeRow(i);
+    }
     if (!mpModel->insertRow(row))
         return;
+    if (row > 0) {
+        i = mpModel->items().lastIndexOf(item, row - 1);
+        if (i >= 0)
+            mpModel->removeRow(i);
+    }
     setItemAt(item, row);
 }
 
@@ -150,7 +152,7 @@ void PlayList::insert(const QString &url, int row)
     item.setDuration(0);
     item.setLastTime(0);
     QString title = url;
-    if (!url.contains("://") || url.startsWith("file://")) {
+    if (!url.contains(QLatin1String("://")) || url.startsWith(QLatin1String("file://"))) {
         title = QFileInfo(url).fileName();
     }
     item.setTitle(title);
@@ -211,6 +213,7 @@ void PlayList::addItems()
 void PlayList::onAboutToPlay(const QModelIndex &index)
 {
     emit aboutToPlay(index.data(Qt::DisplayRole).value<PlayListItem>().url());
+    save();
 }
 
 

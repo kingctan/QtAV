@@ -1,7 +1,7 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
-    
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2015 Wang Bin <wbsecg1@gmail.com>
+
 *   This file is part of QtAV
 
     This program is free software: you can redistribute it and/or modify
@@ -19,6 +19,7 @@
 ******************************************************************************/
 
 #include "EventFilter.h"
+#include <QtAVWidgets>
 #include <QApplication>
 #include <QtCore/QUrl>
 #include <QEvent>
@@ -31,13 +32,15 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QtGui/QWindowStateChangeEvent>
 #include <QtAV/AVPlayer.h>
 #include <QtAV/AudioOutput.h>
+#include <QtAV/VideoCapture.h>
 #include <QtAV/VideoRenderer.h>
-#include <QtAV/OSDFilter.h>
 
 using namespace QtAV;
 
+// TODO: watch main window
 EventFilter::EventFilter(AVPlayer *player) :
     QObject(player),
     menu(0)
@@ -82,25 +85,27 @@ void EventFilter::aboutFFmpeg()
 
 void EventFilter::help()
 {
-    static QString help = "<h4>" +tr("Drag and drop a file to player\n") + "</h4>"
-                       "<p>" + tr("Double click to switch fullscreen") + "</p>"
-                       "<p>" + tr("Shortcut:\n") + "</p>"
-                       "<p>" + tr("Space: pause/continue\n") + "</p>"
-                       "<p>" + tr("F: fullscreen on/off\n") + "</p>"
-                       "<p>" + tr("I: switch video display quality\n") + "</p>"
-                       "<p>" + tr("T: stays on top on/off\n") + "</p>"
-                       "<p>" + tr("N: show next frame. Continue the playing by pressing 'Space'\n") + "</p>"
-                       "<p>" + tr("Ctrl+O: open a file\n") + "</p>"
-                       "<p>" + tr("O: OSD\n") + "</p>"
-                       "<p>" + tr("P: replay\n") + "</p>"
-                       "<p>" + tr("Q/ESC: quit\n") + "</p>"
-                       "<p>" + tr("S: stop\n") + "</p>"
-                       "<p>" + tr("R: switch aspect ratio") + "</p>"
-                       "<p>" + tr("M: mute on/off\n") + "</p>"
-                       "<p>" + tr("C: capture video") + "</p>"
-                       "<p>" + tr("Up/Down: volume +/-\n") + "</p>"
-                       "<p>" + tr("Ctrl+Up/Down: speed +/-\n") + "</p>"
-                       "<p>" + tr("-&gt;/&lt;-: seek forward/backward\n");
+    emit helpRequested();
+    return;
+    static QString help = QString::fromLatin1("<h4>") +tr("Drag and drop a file to player\n") + QString::fromLatin1("</h4>"
+                       "<p>") + tr("A: switch aspect ratio") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Double click to switch fullscreen") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Shortcut:\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Space: pause/continue\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("F: fullscreen on/off\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("T: stays on top on/off\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("N: show next frame. Continue the playing by pressing 'Space'\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Ctrl+O: open a file\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("O: OSD\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("P: replay\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Q/ESC: quit\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("S: stop\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("R: rotate 90") + QString::fromLatin1("</p>"
+                       "<p>") + tr("M: mute on/off\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("C: capture video") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Up/Down: volume +/-\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("Ctrl+Up/Down: speed +/-\n") + QString::fromLatin1("</p>"
+                       "<p>") + tr("-&gt;/&lt;-: seek forward/backward\n");
     QMessageBox::about(0, tr("Help"), help);
 }
 
@@ -108,11 +113,14 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
 {
     Q_UNUSED(watched);
     AVPlayer *player = static_cast<AVPlayer*>(parent());
-    if (!player)
+    if (!player || !player->renderer() || !player->renderer()->widget())
         return false;
+    if (qobject_cast<QWidget*>(watched) != player->renderer()->widget()) {
+        return false;
+    }
 #ifndef QT_NO_DYNAMIC_CAST //dynamic_cast is defined as a macro to force a compile error
     if (player->renderer() != dynamic_cast<VideoRenderer*>(watched)) {
-        return false;
+       // return false;
     }
 #endif
     QEvent::Type type = event->type();
@@ -122,13 +130,20 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
         int key = key_event->key();
         Qt::KeyboardModifiers modifiers = key_event->modifiers();
         switch (key) {
+        case Qt::Key_0:
+            player->seek(0LL);
+            break;
         case Qt::Key_C: //capture
-            player->captureVideo();
+            player->videoCapture()->capture();
             break;
         case Qt::Key_N: //check playing?
-            player->playNextFrame();
+            player->stepForward();
+            break;
+        case Qt::Key_B:
+            player->stepBackward();
             break;
         case Qt::Key_P:
+            player->stop();
             player->play();
             break;
         case Qt::Key_Q:
@@ -146,11 +161,14 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
             QWidget *w = qApp->activeWindow();
             if (!w)
                 return false;
-            if (w->isFullScreen())
-                w->showNormal();
-            else
-                w->showFullScreen();
+            w->setWindowState(w->windowState() ^ Qt::WindowFullScreen);
         }
+            break;
+        case Qt::Key_U:
+            player->setNotifyInterval(player->notifyInterval() + 100);
+            break;
+        case Qt::Key_D:
+            player->setNotifyInterval(player->notifyInterval() - 100);
             break;
         case Qt::Key_Up: {
             AudioOutput *ao = player->audio();
@@ -210,19 +228,18 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
                 //TODO: emit a signal so we can use custome dialogs?
                 openLocalFile();
             } else/* if (m == Qt::NoModifier) */{
-                //foreach renderer, or just current widget? add shortcuts for all vo?
-                OSDFilter *osd = player->renderer()->osdFilter();
-                if (osd)
-                    osd->useNextShowType();
+                emit showNextOSD();
             }
         }
             break;
         case Qt::Key_Left:
             qDebug("<-");
+            player->setSeekType(key_event->isAutoRepeat() ? KeyFrameSeek : AccurateSeek);
             player->seekBackward();
             break;
         case Qt::Key_Right:
             qDebug("->");
+            player->setSeekType(key_event->isAutoRepeat() ? KeyFrameSeek : AccurateSeek);
             player->seekForward();
             break;
         case Qt::Key_M:
@@ -230,24 +247,23 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
                 player->audio()->setMute(!player->audio()->isMute());
             }
             break;
-        case Qt::Key_R: {
+        case Qt::Key_A: {
             VideoRenderer* renderer = player->renderer();
             VideoRenderer::OutAspectRatioMode r = renderer->outAspectRatioMode();
             renderer->setOutAspectRatioMode(VideoRenderer::OutAspectRatioMode(((int)r+1)%2));
+        }
+            break;
+        case Qt::Key_R: {
+            VideoRenderer* renderer = player->renderer();
+            renderer->setOrientation(renderer->orientation() + 90);
+            qDebug("orientation: %d", renderer->orientation());
         }
             break;
         case Qt::Key_T: {
             QWidget *w = qApp->activeWindow();
             if (!w)
                 return false;
-            Qt::WindowFlags wf = w->windowFlags();
-            if (wf & Qt::WindowStaysOnTopHint) {
-                qDebug("Window not stays on top");
-                w->setWindowFlags(wf & ~Qt::WindowStaysOnTopHint);
-            } else {
-                qDebug("Window stays on top");
-                w->setWindowFlags(wf | Qt::WindowStaysOnTopHint);
-            }
+            w->setWindowFlags(w->window()->windowFlags() ^ Qt::WindowStaysOnTopHint);
             //call setParent() when changing the flags, causing the widget to be hidden
             w->show();
         }
@@ -263,18 +279,39 @@ bool EventFilter::eventFilter(QObject *watched, QEvent *event)
     case QEvent::DragEnter:
     case QEvent::DragMove: {
         QDropEvent *e = static_cast<QDropEvent*>(event);
-        e->acceptProposedAction();
+        if (e->mimeData()->hasUrls())
+            e->acceptProposedAction();
+        else
+            e->ignore();
     }
         break;
     case QEvent::Drop: {
         QDropEvent *e = static_cast<QDropEvent*>(event);
-        QString path = e->mimeData()->urls().first().toLocalFile();
-        player->stop();
-        player->load(path);
-        player->play();
-        e->acceptProposedAction();
+        if (e->mimeData()->hasUrls()) {
+            QString path = e->mimeData()->urls().first().toLocalFile();
+            player->stop();
+            player->play(path);
+            e->acceptProposedAction();
+        } else {
+            e->ignore();
+        }
     }
         break;
+
+    case QEvent::MouseButtonDblClick: {
+          QMouseEvent *me = static_cast<QMouseEvent*>(event);
+          Qt::MouseButton mbt = me->button();
+          QWidget *mpWindow =  static_cast<QWidget*>(player->parent());
+        if (mbt == Qt::LeftButton) {
+            if (Qt::WindowFullScreen ==mpWindow->windowState()){
+               mpWindow->setWindowState(mpWindow->windowState() ^ Qt::WindowFullScreen);
+            }else{
+               mpWindow->showFullScreen();
+            }
+        }
+        break;
+    }
+
     case QEvent::GraphicsSceneContextMenu: {
         QGraphicsSceneContextMenuEvent *e = static_cast<QGraphicsSceneContextMenuEvent*>(event);
         showMenu(e->screenPos());
@@ -301,7 +338,59 @@ void EventFilter::showMenu(const QPoint &p)
         menu->addAction(tr("About"), this, SLOT(about()));
         menu->addAction(tr("Help"), this, SLOT(help()));
         menu->addSeparator();
-        menu->addAction(tr("About Qt"), qApp, SLOT(aboutQt()));
     }
     menu->exec(p);
+}
+
+WindowEventFilter::WindowEventFilter(QWidget *window)
+    : QObject(window)
+    , mpWindow(window)
+{
+
+}
+
+bool WindowEventFilter::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != mpWindow)
+        return false;
+    if (event->type() == QEvent::WindowStateChange) {
+        QWindowStateChangeEvent *e = static_cast<QWindowStateChangeEvent*>(event);
+        mpWindow->updateGeometry();
+        if (mpWindow->windowState().testFlag(Qt::WindowFullScreen) || e->oldState().testFlag(Qt::WindowFullScreen)) {
+            emit fullscreenChanged();
+        }
+        return false;
+    }
+
+    if (event->type() ==  QEvent::MouseButtonPress) {
+        QMouseEvent *me = static_cast<QMouseEvent*>(event);
+        Qt::MouseButton mbt = me->button();
+        if (mbt == Qt::LeftButton) {
+            gMousePos = me->globalPos();
+            iMousePos = me->pos();
+        }
+        return false;
+    }
+    if (event->type() == QEvent::MouseButtonRelease) {
+        QMouseEvent *me = static_cast<QMouseEvent*>(event);
+        Qt::MouseButton mbt = me->button();
+        if (mbt != Qt::LeftButton)
+            return false;
+        iMousePos = QPoint();
+        gMousePos = QPoint();
+        return false;
+    }
+    if (event->type() == QEvent::MouseMove) {
+        if (iMousePos.isNull() || gMousePos.isNull())
+            return false;
+        QMouseEvent *me = static_cast<QMouseEvent*>(event);
+        int x = mpWindow->pos().x();
+        int y = mpWindow->pos().y();
+        int dx = me->globalPos().x() - gMousePos.x();
+        int dy = me->globalPos().y() - gMousePos.y();
+        gMousePos = me->globalPos();
+        mpWindow->move(x + dx, y + dy);
+        return false;
+    }
+    return false;
 }

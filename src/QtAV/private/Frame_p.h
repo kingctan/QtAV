@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -30,12 +30,13 @@
 namespace QtAV {
 
 class Frame;
-class Q_AV_EXPORT FramePrivate : public QSharedData
+class FramePrivate : public QSharedData
 {
+    Q_DISABLE_COPY(FramePrivate)
 public:
     FramePrivate()
-        : planes(4, 0)
-        , line_sizes(4, 0)
+        : timestamp(0)
+        , data_align(1)
     {}
     virtual ~FramePrivate() {}
 
@@ -43,6 +44,8 @@ public:
     QVector<int> line_sizes; //stride
     QVariantMap metadata;
     QByteArray data;
+    qreal timestamp;
+    int data_align;
 };
 
 } //namespace QtAV

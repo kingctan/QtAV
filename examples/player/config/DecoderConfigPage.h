@@ -1,50 +1,50 @@
 /******************************************************************************
-    DecoderConfigPage.h: description
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV Player Demo:  this file is part of QtAV examples
+    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
 
-    This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Lesser General Public
-    License as published by the Free Software Foundation; either
-    version 2.1 of the License, or (at your option) any later version.
+*   This file is part of QtAV
 
-    This library is distributed in the hope that it will be useful,
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Lesser General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public
-    License along with this library; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-
-    Alternatively, this file may be used under the terms of the GNU
-    General Public License version 3.0 as published by the Free Software
-    Foundation and appearing in the file LICENSE.GPL included in the
-    packaging of this file.  Please review the following information to
-    ensure the GNU General Public License version 3.0 requirements will be
-    met: http://www.gnu.org/copyleft/gpl.html.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
 
 #ifndef DECODERCONFIGPAGE_H
 #define DECODERCONFIGPAGE_H
 
+#include <QtCore/QVariant>
 #include <QWidget>
+#include "ConfigPageBase.h"
 
-class Config;
+QT_BEGIN_NAMESPACE
 class QListWidget;
 class QToolButton;
 class QSpinBox;
 class QVBoxLayout;
-class DecoderConfigPage : public QWidget
+QT_END_NAMESPACE
+class DecoderConfigPage : public ConfigPageBase
 {
     Q_OBJECT
     class DecoderItemWidget;
 public:
-    explicit DecoderConfigPage(Config *config, QWidget *parent = 0);
+    explicit DecoderConfigPage(QWidget *parent = 0);
+    virtual QString name() const;
+    QVariantHash audioDecoderOptions() const;
+    QVariantHash videoDecoderOptions() const;
 
-signals:
-
-public slots:
+protected:
+    virtual void applyToUi();
+    virtual void applyFromUi();
 
 private slots:
     void videoDecoderEnableChanged();
@@ -52,11 +52,9 @@ private slots:
     void priorityDown();
     void onDecSelected(DecoderItemWidget* iw);
     void updateDecodersUi();
+    void onConfigChanged();
 
 private:
-
-    Config *mpConfig;
-
     QSpinBox *mpThreads;
     QToolButton *mpUp, *mpDown;
     QList<DecoderItemWidget*> mDecItems;

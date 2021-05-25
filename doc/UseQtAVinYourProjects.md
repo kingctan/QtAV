@@ -1,44 +1,39 @@
-It's easy to include QtAV in your project. Because it's pro file are well designed. For more information about the pro file i use, see my another project: https://github.com/wang-bin/LibProjWizard4QtCreator
 
-You can see examples in QtAV to know how to use QtAV, or follow the steps below
+For QtAV version >= 1.3.4, QtAV can be installed as Qt5 modules easily. Integrating QtAV in your project is very easy. 
 
-## Steps
-###1. Create a subdirs type project and a player project
+- Install QtAV SDK
+ * Install without building QtAV https://github.com/wang-bin/QtAV/wiki/Deploy-SDK-Without-Building-QtAV
+ * Or use the latest code and build yourself. Then go to building directory, `sdk_install.sh` or `sdk_install.bat`.
+OSX is a little different because the shared library id must be modified but sdk_install.sh just simply copy files. you have to run QtAV/tools/sdk_osx.sh. Assume your Qt is installed in `$HOME/Qt5.3`, then run
+`qtav_src_dir/sdk_osx.sh  qtav_build_dir/lib_mac_x86_64/QtAV*.framework  ~/Qt5.3/5.3/clang_64/lib`
 
-myproject/myproject.pro
+- qmake Project
 
-    TEMPLATE = subdirs
-    SUBDIRS +=  libQtAV  myplayer
-    myplayer.depends += libQtAV
-    libQtAV.file = QtAV/QtAV.pro
-    include(QtAV/root.pri)
+  To use QtAV, just add the following line in your Qt4 project
 
-###2. Put QtAV to myproject
+      CONFIG += avwidgets
 
-You can use `git clone git@github.com:wang-bin/QtAV.git` in myproject/, or copy QtAV to myproject/. It's recommend to use git so that you can checkout the latest code easily.
+  or add the following line in your Qt5 project
 
-the directory now is
+      QT += avwidgets
 
-> myproject/myproject.pro  
-> myproject/myplayer/myplayer.pro  
-> myproject/QtAV/QtAV.pro  
-> myproject/QtAV/src/libQtAV.pro  
-> myproject/QtAV/src/libQtAV.pri
+  (In Qt5, if QtWidgets module and QtAV widget based renderers are not required by your project, you can simply add `QT += av`)
 
-###3. Add libQtAV.pri in you player project  
-in myproject/myplayer/myplayer.pro, add  
+- C++ Code
 
-    include(../QtAV/src/libQtAV.pri)
+  add 
 
-###4. generate Makefile
+      #include <QtAV>
+      #include <QtAVWidgets>
 
-    qmake
+  Make sure `QtAV::Widgets::registerRenderers()` is called before creating a renderer.
 
-or
+### Try the Example
 
-    qmake -r
+In the latest code, `examples/simpleplayer_sdk` is a complete example to show how to use QtAV SDK to write an multimedia app. You can use `simpleplayer_sdk.pro` as a template.
+ 
+### Link Error
 
-###5. make  
-you player binary will be created in `bin` under build dir. If you are in windows, the QtAV dll also be there
+Because qt automatically rename the module if it's name contains `Qt`, so you may get `cannot find -lQt5AVWidgets`. As a temporary workaround, please manually rename `libQtAVWidgets.so` to `libQt5AVWidgets.so` (windows is Qt5AV.lib or Qt5AV.a) in `$QTDIR/lib`. `-lQt5AV` error is the same.
 
-Note: for windows user, if you run `qmake`(command line build. QtCreator uses `qmake -r` by default) you may run `qmake` twice. otherwise make may fail.
+It should be fixed in 1.9.0

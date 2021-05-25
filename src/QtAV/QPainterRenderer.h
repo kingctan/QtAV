@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -23,7 +23,7 @@
 #define QAV_QPAINTERRENDERER_H
 
 #include <QtAV/VideoRenderer.h>
-#include <qimage.h>
+#include <QtGui/QImage>
 //TODO: not abstract.
 namespace QtAV {
 
@@ -33,11 +33,13 @@ class Q_AV_EXPORT QPainterRenderer : public VideoRenderer
     DPTR_DECLARE_PRIVATE(QPainterRenderer)
 public:
     QPainterRenderer();
-    virtual VideoRendererId id () const;
-    virtual int filterContextType() const;
-    //virtual QImage currentFrameImage() const;
+    bool isSupported(VideoFormat::PixelFormat pixfmt) const Q_DECL_OVERRIDE;
 protected:
-    bool prepareFrame(const VideoFrame& frame);
+    bool preparePixmap(const VideoFrame& frame);
+    void drawBackground() Q_DECL_OVERRIDE;
+    //draw the current frame using the current paint engine. called by paintEvent()
+    void drawFrame() Q_DECL_OVERRIDE;
+
     QPainterRenderer(QPainterRendererPrivate& d);
 };
 

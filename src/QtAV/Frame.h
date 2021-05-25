@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -26,7 +26,7 @@
 #include <QtCore/QVariant>
 #include <QtCore/QSharedData>
 
-// TODO: plane=>channel
+// TODO: fromAVFrame() asAVFrame()?
 namespace QtAV {
 
 class FramePrivate;
@@ -37,11 +37,8 @@ public:
     Frame(const Frame& other);
     virtual ~Frame() = 0;
     Frame& operator =(const Frame &other);
-
-    // allocate memory with given format and other information
-    virtual int allocate();
     /*!
-     * \brief bytesPerLine
+     * \brief planeCount
      *  a decoded frame can be packed and planar. packed format has only 1 plane, while planar
      *  format has more than 1 plane. For audio, the number plane equals channel count. For
      *  video, rgb is 1 plane, yuv420p is 3 plane, p means planar
@@ -49,15 +46,40 @@ public:
      * \return
      */
     int planeCount() const;
-    virtual int bytesPerLine(int plane = 0) const;
-    // the whole frame data
+    /*!
+     * \brief channelCount
+     * for audio, channel count equals plane count
+     * for video, channels >= planes
+     * \return
+     */
+    virtual int channelCount() const;
+    /*!
+     * \brief bytesPerLine
+     *   For video, it's size of each picture line. For audio, it's the whole size of plane
+     * \param plane
+     * \return line size of plane
+     */
+    int bytesPerLine(int plane = 0) const;
+    // the whole frame data. may be empty unless clone() or allocate is called
+    // real data starts with dataAlignment() aligned address
     QByteArray frameData() const;
+    int dataAlignment() const;
+    uchar* frameDataPtr(int* size = NULL) const {
+        const int a = dataAlignment();
+        uchar* p = (uchar*)frameData().constData();
+        const int offset = (a - ((quintptr)p & (a-1))) & (a-1);
+        if (size)
+            *size = frameData().size() - offset;
+        return p+offset;
+    }
     // deep copy 1 plane data
     QByteArray data(int plane = 0) const;
     uchar* bits(int plane = 0);
-    const uchar *bits(int plane = 0) const;
+    const uchar *bits(int plane = 0) const { return constBits(plane);}
+    const uchar* constBits(int plane = 0) const;
     /*!
-     * \brief setBits set slice from FFmpeg
+     * \brief setBits
+     * does nothing if plane is invalid. if given array size is greater than planeCount(), only planeCount() elements is used
      * \param b slice
      * \param plane color/audio channel
      */
@@ -65,9 +87,9 @@ public:
     void setBits(uchar *b, int plane = 0);
     void setBits(const QVector<uchar*>& b);
     void setBits(quint8 *slice[]);
-    /*
-     * It's used now until I complete all pixel formats in QtAV.
-     * set strides from FFmpeg. 4 channels at most for video
+    /*!
+     * \brief setBytesPerLine
+     * does nothing if plane is invalid. if given array size is greater than planeCount(), only planeCount() elements is used
      */
     void setBytesPerLine(int lineSize, int plane = 0);
     void setBytesPerLine(const QVector<int>& lineSize);
@@ -76,9 +98,12 @@ public:
     QVariantMap availableMetaData() const;
     QVariant metaData(const QString& key) const;
     void setMetaData(const QString &key, const QVariant &value);
+    void setTimestamp(qreal ts);
+    qreal timestamp() const;
+    inline void swap(Frame &other) { qSwap(d_ptr, other.d_ptr); }
 
 protected:
-    Frame(FramePrivate &d);
+    Frame(FramePrivate *d);
     QExplicitlySharedDataPointer<FramePrivate> d_ptr;
 };
 

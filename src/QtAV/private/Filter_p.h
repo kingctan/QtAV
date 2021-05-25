@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -27,21 +27,32 @@
 namespace QtAV {
 
 class Filter;
-class FilterContext;
+class VideoFilterContext;
 class Statistics;
-class FilterPrivate : public DPtrPrivate<Filter>
+class Q_AV_PRIVATE_EXPORT FilterPrivate : public DPtrPrivate<Filter>
 {
 public:
     FilterPrivate():
         enabled(true)
-      , context(0)
-      , statistics(0)
+      , owned_by_target(false)
     {}
     virtual ~FilterPrivate() {}
 
     bool enabled;
-    FilterContext *context; //used only when is necessary
-    Statistics *statistics;
+    bool owned_by_target;
+};
+
+class Q_AV_PRIVATE_EXPORT VideoFilterPrivate : public FilterPrivate
+{
+public:
+    VideoFilterPrivate() :
+        context(0)
+    {}
+    VideoFilterContext *context; //used only when is necessary
+};
+
+class Q_AV_PRIVATE_EXPORT AudioFilterPrivate : public FilterPrivate
+{
 };
 
 } //namespace QtAV

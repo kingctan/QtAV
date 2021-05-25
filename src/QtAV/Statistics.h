@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2017 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -23,14 +23,9 @@
 #define QTAV_STATISTICS_H
 
 #include <QtAV/QtAV_Global.h>
+#include <QtCore/QHash>
 #include <QtCore/QTime>
-#include <QtCore/QQueue>
 #include <QtCore/QSharedData>
-
-/*
- * time unit is s
- * TODO: frame counter, frame droped. see VLC
- */
 
 /*!
  * values from functions are dynamically calculated
@@ -48,29 +43,25 @@ public:
     int bit_rate;
     QString format;
     QTime start_time, duration;
-    //TODO: filter, decoder, resampler info etc.
+    QHash<QString, QString> metadata;
     class Common {
     public:
         Common();
         //TODO: dynamic bit rate compute
-
         bool available;
         QString codec, codec_long;
-        //common audio/video info that may be used(visualize) by filters
-        QTime current_time, total_time, start_time; //TODO: in AVFormatContext and AVStream, what's the difference?
-        qreal bit_rate;
-        qint64 frames; //AVStream.nb_frames. AVCodecContext.frame_number?
-        qint64 size; //audio/video stream size. AVCodecContext.frame_size?
-
+        QString decoder;
+        QString decoder_detail;
+        QTime current_time, total_time, start_time;
+        int bit_rate;
+        qint64 frames;
+        qreal frame_rate; // average fps stored in media stream information
         //union member with ctor, dtor, copy ctor only works in c++11
         /*union {
             audio_only audio;
             video_only video;
         } only;*/
-    private:
-        class Private : public QSharedData {
-        };
-        QExplicitlySharedDataPointer<Private> d;
+        QHash<QString, QString> metadata;
     } audio, video; //init them
 
     //from AVCodecContext
@@ -87,41 +78,26 @@ public:
          */
         int frame_size;
         /**
-         * Frame counter, set by libavcodec.
-         *   @note the counter is not incremented if encoding/decoding resulted in an error.
-         */
-        int frame_number;
-        /**
          * number of bytes per packet if constant and known or 0
          * Used by some WAV based audio codecs.
          */
         int block_align;
-        //int cutoff; //Audio cutoff bandwidth (0 means "automatic")
-    private:
-        class Private : public QSharedData {
-        };
-        QExplicitlySharedDataPointer<Private> d;
     } audio_only;
     //from AVCodecContext
     class Q_AV_EXPORT VideoOnly {
     public:
         //union member with ctor, dtor, copy ctor only works in c++11
         VideoOnly();
-        // put frame to be renderer pts after decoded
-        void putPts(qreal pts);
+        VideoOnly(const VideoOnly&);
+        VideoOnly& operator =(const VideoOnly&);
+        ~VideoOnly();
         // compute from pts history
         qreal currentDisplayFPS() const;
-        //AVStream.avg_frame_rate may be 0, then use AVStream.r_frame_rate
-        //http://libav-users.943685.n4.nabble.com/Libav-user-Reading-correct-frame-rate-fps-of-input-video-td4657666.html
-        qreal fps_guess;
-        qreal fps;
-        // average fps frame AVStream
-        qreal avg_frame_rate; //AVStream.avg_frame_rate Kps
+        qreal pts() const; // last pts
 
         int width, height;
         /**
          * Bitstream width / height, may be different from width/height if lowres enabled.
-         * - encoding: unused
          * - decoding: Set by user before init if known. Codec should override / dynamically change if needed.
          */
         int coded_width, coded_height;
@@ -129,18 +105,12 @@ public:
          * the number of pictures in a group of pictures, or 0 for intra_only
          */
         int gop_size;
-        QString pix_fmt; //TODO: new enum in QtAV
-        /**
-         * Motion estimation algorithm used for video coding.
-         * 1 (zero), 2 (full), 3 (log), 4 (phods), 5 (epzs), 6 (x1), 7 (hex),
-         * 8 (umh), 9 (iter), 10 (tesa) [7, 8, 10 are x264 specific, 9 is snow specific]
-         */
-        //int me_method;
+        QString pix_fmt;
+        int rotate;
+        /// return current absolute time (seconds since epcho
+        qint64 frameDisplayed(qreal pts); // used to compute currentDisplayFPS()
     private:
-        class Private : public QSharedData {
-        public:
-            QQueue<qreal> ptsHistory; //compute fps
-        };
+        class Private;
         QExplicitlySharedDataPointer<Private> d;
     } video_only;
 };
